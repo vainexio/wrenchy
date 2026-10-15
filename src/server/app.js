@@ -4,11 +4,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import mongoose from 'mongoose';
 import { VerificationLog } from '../models/Verification.js';
+import { createApiRouter } from './api.js';
+import { createAuthRoutes } from './auth.js';
 
 const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../client/dist');
 
 export function createApp(discordClient) {
   const app = express();
+  app.set('trust proxy', 1); // Render runs behind a proxy; needed for secure cookies
+  app.use(express.json({ limit: '50kb' }));
 
   // Render health check
   app.get('/api/health', (_req, res) => {
@@ -42,6 +46,18 @@ export function createApp(discordClient) {
       totalVerified: counts.reduce((sum, c) => sum + c.count, 0),
     });
   });
+
+  // Discord login (dashboard). Everything else under /api below requires a session.
+  const auth = createAuthRoutes(discordClient);
+  app.get('/api/auth/login', auth.start);
+  app.get('/api/auth/callback', (req, res) =>
+    auth.callback(req, res).catch((err) => {
+      console.error('[auth] callback error:', err);
+      res.redirect('/?error=oauth_failed');
+    }),
+  );
+  app.post('/api/auth/logout', auth.logout);
+  app.use('/api', createApiRouter(discordClient, auth));
 
   // React dashboard (built with `npm run build`)
   if (fs.existsSync(clientDist)) {

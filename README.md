@@ -3,34 +3,42 @@
 General-purpose Discord bot for **Talyer**, built on the MERN stack:
 
 - **MongoDB** (Mongoose): per-server settings and verification logs
-- **Express**: health check + status API, serves the dashboard
-- **React** (Vite): small status dashboard
+- **Express**: health check, status API, settings API, Discord login
+- **React** (Vite): dashboard for managing the bot
 - **Node.js** (discord.js v14): the bot
 
 ## Features
 
 ### Verification
 New members click a button on the verification panel and get the **Talyerista** role.
+Everything is configured from the **dashboard**:
 
-| Command | What it does |
-| --- | --- |
-| `/verification setup channel [role]` | Posts the panel and sets the role (defaults to `Talyerista`, created if missing) |
-| `/verification role role` | Change the role given on verification |
-| `/verification message [title] [description] [button_label] [button_emoji] [color] [success_message]` | Edit the panel text; the posted panel updates in place. Use `\n` for new lines |
-| `/verification send [channel]` | Re-post the panel (the old one is removed) |
-| `/verification toggle enabled` | Turn verification on/off (the button greys out) |
-| `/verification status` | Show current settings and how many members have verified |
+- Turn verification on/off (the button greys out when off)
+- Choose the role to give (creates `Talyerista` if it doesn't exist)
+- Edit the panel title, description, button label/emoji, color, and the reply after verifying, with a live preview
+- Post or re-post the panel in any channel. Saving updates the posted panel in place.
 
-`/verification` needs the **Manage Server** permission by default.
+### Dashboard login
+Staff log in with Discord. Only members who have the role in `ADMIN_ROLE_ID` (default `1560157523984646154`) can get in.
+The role is re-checked on every request, so removing it revokes access immediately.
 
-### Other
+### Slash commands
 - `/ping`: checks if the bot is alive
 
-## Discord server setup
+## Setup
+
+### Discord Developer Portal
+1. **Bot**: copy the token into `DISCORD_TOKEN`.
+2. **OAuth2 → Client Secret**: copy it into `DISCORD_CLIENT_SECRET`.
+3. **OAuth2 → Redirects**: add
+   - `http://localhost:3000/api/auth/callback` (local)
+   - `https://<your-app>.onrender.com/api/auth/callback` (Render)
+
+### Discord server
 1. Invite the bot (the link is printed in the console on startup). It needs **Manage Roles**.
-2. In **Server Settings → Roles**, drag the Wrenchy role **above** `Talyerista`.
+2. In **Server Settings → Roles**, keep Wrenchy's role **above** `Talyerista`.
 3. Hide your channels from `@everyone` and allow `Talyerista` to view them. Keep the verification channel visible to `@everyone`.
-4. Run `/verification setup channel:#verify`.
+4. Open the dashboard, pick the channel, and click **Post panel**.
 
 ## Running locally
 ```bash
@@ -49,8 +57,9 @@ Create a **Web Service** from this repo:
 | Build Command | `npm install && npm run build` |
 | Start Command | `npm start` |
 | Health Check Path | `/api/health` |
-| Environment | `DISCORD_TOKEN`, `MONGODB_URI` |
+| Environment | `DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `MONGODB_URI`, `ADMIN_ROLE_ID` |
 
+Render sets `RENDER_EXTERNAL_URL` automatically, which is used for the login redirect. Set `PUBLIC_URL` only if you use a custom domain.
 In MongoDB Atlas, allow Render's IPs under **Network Access** (or `0.0.0.0/0`).
 
 ## Adding commands
