@@ -15,7 +15,7 @@ Everything is configured from the **dashboard**:
 
 - Turn verification on/off (the button greys out when off)
 - Choose the role to give (creates `Talyerista` if it doesn't exist)
-- Edit the panel title, description, button label/emoji, color, and the reply after verifying, with a live preview
+- Edit the panel message (plain text with Discord formatting), button label/emoji, and the reply after verifying, with a live preview
 - Post or re-post the panel in any channel. Saving updates the posted panel in place.
 
 ### Dashboard login

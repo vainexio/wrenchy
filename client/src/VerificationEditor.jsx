@@ -3,7 +3,7 @@ import { api } from './api.js';
 import PanelPreview from './PanelPreview.jsx';
 
 const CREATE_ROLE = '__create__';
-const FIELDS = ['enabled', 'title', 'description', 'buttonLabel', 'buttonEmoji', 'color', 'successMessage', 'roleId'];
+const FIELDS = ['enabled', 'content', 'buttonLabel', 'buttonEmoji', 'successMessage', 'roleId'];
 
 function toForm(guild) {
   const v = guild.verification;
@@ -115,12 +115,9 @@ export default function VerificationEditor({ guildId, onError }) {
         <div className="split">
           <div className="fields">
             <label className="field">
-              <span>Title</span>
-              <input value={form.title} maxLength={256} onChange={set('title')} required />
-            </label>
-            <label className="field">
-              <span>Description</span>
-              <textarea rows={5} value={form.description} maxLength={4000} onChange={set('description')} required />
+              <span>Message</span>
+              <textarea rows={6} value={form.content} maxLength={2000} onChange={set('content')} required />
+              <small className="muted">Supports Discord formatting like **bold**, *italic*, and # headings.</small>
             </label>
             <div className="row">
               <label className="field grow">
@@ -130,10 +127,6 @@ export default function VerificationEditor({ guildId, onError }) {
               <label className="field small">
                 <span>Emoji</span>
                 <input value={form.buttonEmoji} maxLength={64} onChange={set('buttonEmoji')} placeholder="none" />
-              </label>
-              <label className="field small">
-                <span>Color</span>
-                <input type="color" value={form.color} onChange={set('color')} />
               </label>
             </div>
             <label className="field">

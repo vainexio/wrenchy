@@ -6,14 +6,13 @@ const verificationSchema = new mongoose.Schema(
     roleId: { type: String, default: null },
     channelId: { type: String, default: null },
     messageId: { type: String, default: null },
-    title: { type: String, default: 'Welcome to Talyer!' },
-    description: {
+    content: {
       type: String,
-      default: 'Click the button below to verify yourself and get access to the rest of the server.',
+      default:
+        '**Welcome to Talyer!**\nClick the button below to verify yourself and get access to the rest of the server.',
     },
     buttonLabel: { type: String, default: 'Verify' },
     buttonEmoji: { type: String, default: '🔧' },
-    color: { type: String, default: '#F5A623' },
     successMessage: { type: String, default: "You're verified! Welcome to the shop, Talyerista. 🔧" },
   },
   { _id: false },

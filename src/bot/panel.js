@@ -1,23 +1,18 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 
 export const VERIFY_BUTTON_ID = 'wrenchy:verify';
 
 export function buildPanel(verification) {
-  const embed = new EmbedBuilder()
-    .setTitle(verification.title)
-    .setDescription(verification.description)
-    .setColor(verification.color)
-    .setFooter({ text: 'Talyer • Verification' });
-
   const button = new ButtonBuilder()
     .setCustomId(VERIFY_BUTTON_ID)
     .setLabel(verification.buttonLabel)
-    .setStyle(ButtonStyle.Success)
+    .setStyle(ButtonStyle.Secondary)
     .setDisabled(!verification.enabled);
   if (verification.buttonEmoji) button.setEmoji(verification.buttonEmoji);
 
   return {
-    embeds: [embed],
+    content: verification.content,
+    embeds: [], // clears the embed on panels posted by older versions
     components: [new ActionRowBuilder().addComponents(button)],
   };
 }

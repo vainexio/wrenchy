@@ -8,11 +8,9 @@ import { VerificationLog } from '../models/Verification.js';
 
 const PANEL_CHANNEL_TYPES = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
 const CREATE_DEFAULT_ROLE = '__create__';
-const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 const TEXT_FIELDS = {
-  title: { max: 256, required: true },
-  description: { max: 4000, required: true },
+  content: { max: 2000, required: true },
   buttonLabel: { max: 80, required: true },
   buttonEmoji: { max: 64, required: false },
   successMessage: { max: 2000, required: true },
@@ -77,11 +75,6 @@ async function applyChanges(guild, guildConfig, body) {
     if (rule.required && !value) throw new HttpError(400, `${key} can't be empty.`);
     if (value.length > rule.max) throw new HttpError(400, `${key} must be at most ${rule.max} characters.`);
     v[key] = value;
-  }
-
-  if (body.color !== undefined) {
-    if (!HEX_COLOR.test(body.color)) throw new HttpError(400, 'Color must be a hex code like #F5A623.');
-    v.color = body.color;
   }
 
   if (body.enabled !== undefined) {
