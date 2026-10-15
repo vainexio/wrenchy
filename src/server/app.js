@@ -11,13 +11,19 @@ const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 
 export function createApp(discordClient) {
   const app = express();
-  app.set('trust proxy', 1); // Render runs behind a proxy; needed for secure cookies
-  app.use(express.json({ limit: '50kb' }));
 
-  // Render health check
+  // Render health check — registered first so nothing else can delay or block it.
+  let healthChecked = false;
   app.get('/api/health', (_req, res) => {
+    if (!healthChecked) {
+      healthChecked = true;
+      console.log('[web] first health check received');
+    }
     res.json({ ok: true, bot: discordClient.isReady(), db: mongoose.connection.readyState === 1 });
   });
+
+  app.set('trust proxy', 1); // Render runs behind a proxy; needed for secure cookies
+  app.use(express.json({ limit: '50kb' }));
 
   app.get('/api/status', async (_req, res) => {
     const ready = discordClient.isReady();

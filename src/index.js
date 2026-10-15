@@ -6,8 +6,9 @@ import { createApp } from './server/app.js';
 
 async function main() {
   // Start the web server first so Render's port/health check passes quickly.
-  const server = createApp(client).listen(config.port, () => {
-    console.log(`[web] listening on http://localhost:${config.port}`);
+  // Bind to 0.0.0.0 explicitly; Render routes traffic and health checks over IPv4.
+  const server = createApp(client).listen(config.port, '0.0.0.0', () => {
+    console.log(`[web] listening on port ${config.port}`);
   });
 
   await connectDatabase();
