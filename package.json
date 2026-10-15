@@ -1,0 +1,28 @@
+{
+  "name": "wrenchy",
+  "version": "1.0.0",
+  "description": "Wrenchy - general purpose Discord bot for Talyer (MERN)",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "vite build",
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "dev:client": "vite"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "discord.js": "^14.27.0",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "mongoose": "^9.11.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.4"
+  }
+}
