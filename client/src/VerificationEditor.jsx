@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { api } from './api.js';
-import PanelPreview from './PanelPreview.jsx';
+import {
+  DiscordPreview,
+  EnabledSwitch,
+  Loading,
+  Notice,
+  PanelChannelCard,
+  RoleOptions,
+  SaveBar,
+} from './PanelParts.jsx';
+import { useGuildEditor } from './useGuildEditor.js';
 
 const CREATE_ROLE = '__create__';
 const FIELDS = ['enabled', 'content', 'buttonLabel', 'buttonEmoji', 'successMessage', 'roleId'];
@@ -15,81 +22,25 @@ function toForm(guild) {
 }
 
 export default function VerificationEditor({ guildId, onError }) {
-  const [guild, setGuild] = useState(null);
-  const [form, setForm] = useState(null);
-  const [channelId, setChannelId] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const editor = useGuildEditor({ guildId, kind: 'verification', toForm, onError });
+  const { guild, form, setForm, saved, dirty, busy, notice, panelUrl } = editor;
+  if (!guild || !form) return <Loading />;
 
-  const load = (data) => {
-    setGuild(data);
-    setForm(toForm(data));
-    setChannelId((current) => data.verification.channelId ?? current);
-  };
-
-  useEffect(() => {
-    setGuild(null);
-    setNotice(null);
-    api(`/guilds/${guildId}`).then(load).catch(onError);
-  }, [guildId]);
-
-  const saved = useMemo(() => guild && toForm(guild), [guild]);
-  const dirty = Boolean(form && saved && FIELDS.some((k) => form[k] !== saved[k]));
-
-  if (!guild || !form) {
-    return (
-      <section className="card">
-        <p className="muted">Loading server…</p>
-      </section>
-    );
-  }
-
-  const set = (key) => (e) =>
-    setForm({ ...form, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
-
-  async function run(action, successText) {
-    setBusy(true);
-    setNotice(null);
-    try {
-      load(await action());
-      setNotice({ type: 'ok', text: successText });
-    } catch (err) {
-      onError(err);
-      setNotice({ type: 'error', text: err.message });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const save = () => api(`/guilds/${guildId}/verification`, { method: 'PUT', body: form });
-  const post = () => api(`/guilds/${guildId}/verification/panel`, { method: 'POST', body: { channelId } });
-
-  const onSave = (e) => {
-    e.preventDefault();
-    run(save, guild.panelUrl ? 'Saved. The panel in Discord was updated.' : 'Saved.');
-  };
-  const onPost = () =>
-    run(async () => {
-      if (dirty) await save();
-      return post();
-    }, 'Panel posted in Discord.');
+  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
   return (
-    <form className="editor" onSubmit={onSave}>
+    <form className="editor" onSubmit={(e) => editor.onSave(form, e)}>
       <section className="card">
         <div className="card-head">
           <h2>Verification</h2>
-          <label className="switch">
-            <input type="checkbox" checked={form.enabled} onChange={set('enabled')} />
-            <span>{form.enabled ? 'Enabled' : 'Disabled'}</span>
-          </label>
+          <EnabledSwitch checked={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
         </div>
         <p className="muted">
           {guild.verifiedCount} member{guild.verifiedCount === 1 ? '' : 's'} verified
-          {guild.panelUrl && (
+          {panelUrl && (
             <>
               {' · '}
-              <a href={guild.panelUrl} target="_blank" rel="noreferrer">
+              <a href={panelUrl} target="_blank" rel="noreferrer">
                 View panel in Discord
               </a>
             </>
@@ -102,12 +53,7 @@ export default function VerificationEditor({ guildId, onError }) {
             {!guild.defaultRoleExists && (
               <option value={CREATE_ROLE}>+ Create “{guild.defaultRoleName}” role</option>
             )}
-            {guild.roles.map((r) => (
-              <option key={r.id} value={r.id} disabled={Boolean(r.problem)}>
-                @{r.name}
-                {r.problem ? ' (Wrenchy can’t assign this)' : ''}
-              </option>
-            ))}
+            <RoleOptions roles={guild.roles} />
           </select>
           {form.roleId === CREATE_ROLE && <small className="muted">The role will be created when you save.</small>}
         </label>
@@ -142,44 +88,20 @@ export default function VerificationEditor({ guildId, onError }) {
           </div>
           <div className="preview">
             <span className="field-label">Preview</span>
-            <PanelPreview v={form} />
+            <DiscordPreview
+              content={form.content}
+              buttons={[{ label: form.buttonLabel, emoji: form.buttonEmoji }]}
+              disabled={!form.enabled}
+              reply={form.successMessage}
+            />
           </div>
         </div>
 
-        <div className="actions">
-          <button type="submit" className="primary" disabled={busy || !dirty}>
-            {busy ? 'Saving…' : 'Save changes'}
-          </button>
-          {dirty && (
-            <button type="button" disabled={busy} onClick={() => setForm(saved)}>
-              Discard
-            </button>
-          )}
-        </div>
+        <SaveBar busy={busy} dirty={dirty} onDiscard={() => setForm(saved)} />
       </section>
 
-      <section className="card">
-        <h2>Panel channel</h2>
-        <p className="muted">Wrenchy posts the verification button here. Posting again removes the old one.</p>
-        <div className="row">
-          <select className="grow" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-            <option value="">Select a channel…</option>
-            {guild.channels.map((c) => (
-              <option key={c.id} value={c.id} disabled={!c.canPost}>
-                #{c.name}
-                {c.category ? ` (${c.category})` : ''}
-                {c.canPost ? '' : ' (no permission)'}
-              </option>
-            ))}
-          </select>
-          <button type="button" className="primary" disabled={busy || !channelId} onClick={onPost}>
-            {guild.panelUrl ? 'Re-post panel' : 'Post panel'}
-          </button>
-        </div>
-        {dirty && <small className="muted">Your unsaved changes will be saved first.</small>}
-      </section>
-
-      {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
+      <PanelChannelCard editor={editor} onPost={() => editor.onPost(form)} />
+      <Notice notice={notice} />
     </form>
   );
 }

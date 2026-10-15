@@ -1,7 +1,8 @@
 import { Client, Events, GatewayIntentBits, MessageFlags, PermissionsBitField } from 'discord.js';
 import { commandData, commands } from './commands/index.js';
+import { handleRoleButton } from './interactions/roleButton.js';
 import { handleVerifyButton } from './interactions/verifyButton.js';
-import { VERIFY_BUTTON_ID } from './panel.js';
+import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
 
 const buttonHandlers = {
   [VERIFY_BUTTON_ID]: handleVerifyButton,
@@ -45,7 +46,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   let handler;
   if (interaction.isChatInputCommand()) handler = commands.get(interaction.commandName)?.execute;
-  else if (interaction.isButton()) handler = buttonHandlers[interaction.customId];
+  else if (interaction.isButton()) {
+    handler = interaction.customId.startsWith(ROLE_BUTTON_PREFIX)
+      ? handleRoleButton
+      : buttonHandlers[interaction.customId];
+  }
   if (!handler) return;
 
   try {

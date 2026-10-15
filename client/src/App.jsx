@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api, AuthError } from './api.js';
+import ReactionRolesEditor from './ReactionRolesEditor.jsx';
 import VerificationEditor from './VerificationEditor.jsx';
+
+const TABS = [
+  { id: 'verification', label: 'Verification', Editor: VerificationEditor },
+  { id: 'reactionRoles', label: 'Reaction Roles', Editor: ReactionRolesEditor },
+];
 
 const LOGIN_ERRORS = {
   forbidden: "You don't have the role needed to use this dashboard.",
@@ -39,6 +45,7 @@ export default function App() {
   const [loginError, setLoginError] = useState(readLoginError);
   const [guilds, setGuilds] = useState([]);
   const [guildId, setGuildId] = useState(null);
+  const [tab, setTab] = useState(TABS[0].id);
 
   useEffect(() => {
     const load = () =>
@@ -143,7 +150,23 @@ export default function App() {
           )}
           {guilds.length === 1 && <h2 className="guild-title">{guilds[0].name}</h2>}
           {guildId ? (
-            <VerificationEditor key={guildId} guildId={guildId} onError={handleError} />
+            <>
+              <nav className="tabs">
+                {TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={t.id === tab ? 'active' : ''}
+                    onClick={() => setTab(t.id)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </nav>
+              {TABS.filter((t) => t.id === tab).map(({ id, Editor }) => (
+                <Editor key={`${guildId}-${id}`} guildId={guildId} onError={handleError} />
+              ))}
+            </>
           ) : (
             <p className="muted">Wrenchy isn't in any servers yet.</p>
           )}

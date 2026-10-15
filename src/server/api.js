@@ -1,19 +1,29 @@
 import { ChannelType } from 'discord.js';
 import express from 'express';
 import { config } from '../config.js';
-import { postPanel, refreshPanel } from '../bot/panel.js';
+import { MAX_ROLE_BUTTONS, postPanel, refreshPanel } from '../bot/panel.js';
 import { checkAssignable, findDefaultRole, findOrCreateDefaultRole } from '../bot/roles.js';
 import { getGuildConfig } from '../models/GuildConfig.js';
 import { VerificationLog } from '../models/Verification.js';
 
 const PANEL_CHANNEL_TYPES = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
 const CREATE_DEFAULT_ROLE = '__create__';
+const CREATE_NEW_ROLE = '__new__';
 
-const TEXT_FIELDS = {
+// URL segment -> GuildConfig key
+const PANEL_KINDS = { verification: 'verification', 'reaction-roles': 'reactionRoles' };
+
+const VERIFICATION_TEXT = {
   content: { max: 2000, required: true },
   buttonLabel: { max: 80, required: true },
   buttonEmoji: { max: 64, required: false },
   successMessage: { max: 2000, required: true },
+};
+
+const REACTION_ROLES_TEXT = {
+  content: { max: 2000, required: true },
+  addedMessage: { max: 500, required: true },
+  removedMessage: { max: 500, required: true },
 };
 
 class HttpError extends Error {
@@ -30,8 +40,12 @@ function getGuild(client, guildId) {
   return guild;
 }
 
+const panelUrl = (guild, settings) =>
+  settings.channelId && settings.messageId
+    ? `https://discord.com/channels/${guild.id}/${settings.channelId}/${settings.messageId}`
+    : null;
+
 async function describeGuild(guild, guildConfig) {
-  const v = guildConfig.verification;
   const me = guild.members.me;
   const verifiedCount = await VerificationLog.countDocuments({ guildId: guild.id });
 
@@ -59,28 +73,41 @@ async function describeGuild(guild, guildConfig) {
     roles,
     channels,
     verifiedCount,
-    panelUrl:
-      v.channelId && v.messageId ? `https://discord.com/channels/${guild.id}/${v.channelId}/${v.messageId}` : null,
-    verification: v.toObject(),
+    panelUrls: {
+      verification: panelUrl(guild, guildConfig.verification),
+      reactionRoles: panelUrl(guild, guildConfig.reactionRoles),
+    },
+    verification: guildConfig.verification.toObject(),
+    reactionRoles: guildConfig.reactionRoles.toObject(),
   };
 }
 
-async function applyChanges(guild, guildConfig, body) {
-  const v = guildConfig.verification;
+function cleanText(value, name, { max, required }) {
+  if (typeof value !== 'string') throw new HttpError(400, `${name} must be text.`);
+  const text = value.trim();
+  if (required && !text) throw new HttpError(400, `${name} can't be empty.`);
+  if (text.length > max) throw new HttpError(400, `${name} must be at most ${max} characters.`);
+  return text;
+}
 
-  for (const [key, rule] of Object.entries(TEXT_FIELDS)) {
-    if (body[key] === undefined) continue;
-    const value = typeof body[key] === 'string' ? body[key].trim() : null;
-    if (value === null) throw new HttpError(400, `${key} must be text.`);
-    if (rule.required && !value) throw new HttpError(400, `${key} can't be empty.`);
-    if (value.length > rule.max) throw new HttpError(400, `${key} must be at most ${rule.max} characters.`);
-    v[key] = value;
+function applyText(settings, body, rules) {
+  for (const [key, rule] of Object.entries(rules)) {
+    if (body[key] !== undefined) settings[key] = cleanText(body[key], key, rule);
   }
-
   if (body.enabled !== undefined) {
     if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'enabled must be true or false.');
-    v.enabled = body.enabled;
+    settings.enabled = body.enabled;
   }
+}
+
+function assertAssignable(guild, role) {
+  const problem = checkAssignable(guild, role);
+  if (problem) throw new HttpError(400, problem);
+}
+
+async function applyVerification(guild, guildConfig, body) {
+  const v = guildConfig.verification;
+  applyText(v, body, VERIFICATION_TEXT);
 
   if (body.roleId !== undefined) {
     const role =
@@ -88,10 +115,55 @@ async function applyChanges(guild, guildConfig, body) {
         ? await findOrCreateDefaultRole(guild)
         : guild.roles.cache.get(body.roleId);
     if (!role) throw new HttpError(400, 'That role no longer exists.');
-    const problem = checkAssignable(guild, role);
-    if (problem) throw new HttpError(400, problem);
+    assertAssignable(guild, role);
     v.roleId = role.id;
   }
+}
+
+async function applyReactionRoles(guild, guildConfig, body) {
+  const rr = guildConfig.reactionRoles;
+  applyText(rr, body, REACTION_ROLES_TEXT);
+  if (body.buttons === undefined) return;
+
+  if (!Array.isArray(body.buttons)) throw new HttpError(400, 'buttons must be a list.');
+  if (body.buttons.length > MAX_ROLE_BUTTONS) throw new HttpError(400, `You can have at most ${MAX_ROLE_BUTTONS} buttons.`);
+
+  // Validate everything before creating any roles, so a bad request doesn't leave stray roles behind.
+  const buttons = body.buttons.map((b, i) => {
+    const n = `Button ${i + 1}`;
+    const label = cleanText(b?.label, `${n} label`, { max: 80, required: true });
+    const emoji = cleanText(b?.emoji ?? '', `${n} emoji`, { max: 64, required: false });
+    if (b.roleId === CREATE_NEW_ROLE) return { label, emoji, roleId: null };
+    const role = guild.roles.cache.get(b.roleId);
+    if (!role) throw new HttpError(400, `${n}: that role no longer exists.`);
+    assertAssignable(guild, role);
+    return { label, emoji, roleId: role.id };
+  });
+
+  for (const button of buttons.filter((b) => !b.roleId)) {
+    // Reuse a role with the same name if one exists (e.g. from an earlier failed save).
+    const existing = guild.roles.cache.find((r) => !r.managed && r.name.toLowerCase() === button.label.toLowerCase());
+    const role = existing ?? (await guild.roles.create({ name: button.label, reason: 'Wrenchy reaction role' }));
+    assertAssignable(guild, role);
+    button.roleId = role.id;
+  }
+
+  const ids = buttons.map((b) => b.roleId);
+  if (new Set(ids).size !== ids.length) throw new HttpError(400, 'Each role can only be on one button.');
+  rr.buttons = buttons;
+}
+
+const APPLY = { verification: applyVerification, reactionRoles: applyReactionRoles };
+
+const PANEL_REQUIREMENTS = {
+  verification: (s) => (s.roleId ? null : 'Choose a verified role and save first.'),
+  reactionRoles: (s) => (s.buttons.length ? null : 'Add at least one role button and save first.'),
+};
+
+function getKind(req) {
+  const kind = PANEL_KINDS[req.params.kind];
+  if (!kind) throw new HttpError(404, 'Unknown panel.');
+  return kind;
 }
 
 export function createApiRouter(client, auth) {
@@ -110,34 +182,41 @@ export function createApiRouter(client, auth) {
     res.json(await describeGuild(guild, await getGuildConfig(guild.id)));
   });
 
-  // Saves settings and updates the posted panel in place.
-  router.put('/guilds/:guildId/verification', async (req, res) => {
+  // Saves a panel's settings and updates the posted panel in place.
+  router.put('/guilds/:guildId/:kind', async (req, res) => {
+    const kind = getKind(req);
     const guild = getGuild(client, req.params.guildId);
     const guildConfig = await getGuildConfig(guild.id);
-    await applyChanges(guild, guildConfig, req.body ?? {});
+    await APPLY[kind](guild, guildConfig, req.body ?? {});
 
     // Edit the live panel before saving so an invalid emoji etc. doesn't get persisted.
     try {
-      await refreshPanel(guild, guildConfig);
+      await refreshPanel(guild, guildConfig, kind);
     } catch (err) {
-      throw new HttpError(400, `Discord rejected the panel (is the emoji valid?): ${err.message}`);
+      throw new HttpError(400, `Discord rejected the panel (is every emoji valid?): ${err.message}`);
     }
     await guildConfig.save();
     res.json(await describeGuild(guild, guildConfig));
   });
 
-  // Posts (or re-posts) the verification panel in a channel.
-  router.post('/guilds/:guildId/verification/panel', async (req, res) => {
+  // Posts (or re-posts) a panel in a channel.
+  router.post('/guilds/:guildId/:kind/panel', async (req, res) => {
+    const kind = getKind(req);
     const guild = getGuild(client, req.params.guildId);
     const guildConfig = await getGuildConfig(guild.id);
-    if (!guildConfig.verification.roleId) throw new HttpError(400, 'Choose a verified role and save first.');
+    const notReady = PANEL_REQUIREMENTS[kind](guildConfig[kind]);
+    if (notReady) throw new HttpError(400, notReady);
 
     const channel = guild.channels.cache.get(req.body?.channelId);
     if (!channel || !PANEL_CHANNEL_TYPES.includes(channel.type)) throw new HttpError(400, 'Pick a text channel.');
     const missing = channel.permissionsFor(guild.members.me).missing(['ViewChannel', 'SendMessages', 'EmbedLinks']);
     if (missing.length) throw new HttpError(400, `Wrenchy is missing ${missing.join(', ')} in #${channel.name}.`);
 
-    await postPanel(guild, guildConfig, channel);
+    try {
+      await postPanel(guild, guildConfig, kind, channel);
+    } catch (err) {
+      throw new HttpError(400, `Discord rejected the panel (is every emoji valid?): ${err.message}`);
+    }
     res.json(await describeGuild(guild, guildConfig));
   });
 

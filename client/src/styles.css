@@ -125,8 +125,9 @@ small { display: block; margin-top: 6px; }
 .discord { background: #313338; border-radius: 8px; padding: 14px; color: #dbdee1; }
 .discord-content { white-space: pre-wrap; font-size: 0.92rem; line-height: 1.4; }
 .discord-content strong { color: #f2f3f5; }
+.discord-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .discord-button {
-  margin-top: 8px; background: #4e5058; border: none; color: #fff; font-weight: 500;
+  margin-top: 0; background: #4e5058; border: none; color: #fff; font-weight: 500;
   padding: 6px 16px; border-radius: 4px; font-size: 0.9rem; cursor: default;
 }
 .discord-button:disabled { opacity: 0.5; }
@@ -137,3 +138,24 @@ small { display: block; margin-top: 6px; }
   .split { grid-template-columns: 1fr; }
   .header { flex-wrap: wrap; }
 }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.tabs button {
+  border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+  padding: 10px 14px; color: var(--muted); font-weight: 500;
+}
+.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+
+/* Reaction role buttons */
+.role-buttons { display: flex; flex-direction: column; gap: 8px; }
+.role-button { display: grid; grid-template-columns: 1.4fr 1fr 80px auto; gap: 8px; align-items: center; }
+.role-button-tools { display: flex; gap: 4px; }
+.role-button-tools button { padding: 6px 10px; }
+.error-text { color: var(--red); }
+
+@media (max-width: 640px) {
+  .role-button { grid-template-columns: 1fr 80px; }
+  .role-button select { grid-column: 1 / -1; }
+}
+.emoji { width: 1.2em; height: 1.2em; vertical-align: -0.25em; object-fit: contain; }

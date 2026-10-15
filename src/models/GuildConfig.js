@@ -18,10 +18,36 @@ const verificationSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const roleButtonSchema = new mongoose.Schema(
+  {
+    roleId: { type: String, required: true },
+    label: { type: String, required: true },
+    emoji: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
+const reactionRolesSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    channelId: { type: String, default: null },
+    messageId: { type: String, default: null },
+    content: {
+      type: String,
+      default: '**Pick your roles!**\nClick a button to add a role. Click it again to remove it.',
+    },
+    addedMessage: { type: String, default: 'Added {role}.' },
+    removedMessage: { type: String, default: 'Removed {role}.' },
+    buttons: { type: [roleButtonSchema], default: [] },
+  },
+  { _id: false },
+);
+
 const guildConfigSchema = new mongoose.Schema(
   {
     guildId: { type: String, required: true, unique: true, index: true },
     verification: { type: verificationSchema, default: () => ({}) },
+    reactionRoles: { type: reactionRolesSchema, default: () => ({}) },
   },
   { timestamps: true },
 );

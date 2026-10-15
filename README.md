@@ -18,6 +18,14 @@ Everything is configured from the **dashboard**:
 - Edit the panel message (plain text with Discord formatting), button label/emoji, and the reply after verifying, with a live preview
 - Post or re-post the panel in any channel. Saving updates the posted panel in place.
 
+### Reaction roles
+A panel of buttons where members pick their own roles. Clicking a button adds the role, and clicking it again removes it.
+Configured from the dashboard's **Reaction Roles** tab:
+
+- Edit the panel message and the private "added" / "removed" replies (`{role}` is replaced with the role)
+- Add up to 25 buttons, each with a role, label, and emoji. Pick an existing role or create a new one named after the label.
+- Reorder or remove buttons, turn the panel on/off, and post it in any channel
+
 ### Dashboard login
 Staff log in with Discord. Only members who have the role in `ADMIN_ROLE_ID` (default `1560157523984646154`) can get in.
 The role is re-checked on every request, so removing it revokes access immediately.
