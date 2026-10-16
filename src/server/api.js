@@ -5,6 +5,8 @@ import { MAX_ROLE_BUTTONS, postPanel, refreshPanel } from '../bot/panel.js';
 import { checkAssignable, findDefaultRole, findOrCreateDefaultRole } from '../bot/roles.js';
 import { getGuildConfig } from '../models/GuildConfig.js';
 import { VerificationLog } from '../models/Verification.js';
+import { listAnnouncements, sendAnnouncement } from './announcements.js';
+import { HttpError } from './errors.js';
 
 const PANEL_CHANNEL_TYPES = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
 const CREATE_DEFAULT_ROLE = '__create__';
@@ -26,12 +28,6 @@ const REACTION_ROLES_TEXT = {
   removedMessage: { max: 500, required: true },
 };
 
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
 
 function getGuild(client, guildId) {
   if (!client.isReady()) throw new HttpError(503, 'The bot is not connected to Discord yet.');
@@ -118,6 +114,17 @@ async function applyVerification(guild, guildConfig, body) {
     assertAssignable(guild, role);
     v.roleId = role.id;
   }
+
+  if (body.extraRoleIds !== undefined) {
+    if (!Array.isArray(body.extraRoleIds)) throw new HttpError(400, 'extraRoleIds must be a list.');
+    const ids = [...new Set(body.extraRoleIds)].filter((id) => id !== v.roleId);
+    for (const id of ids) {
+      const role = guild.roles.cache.get(id);
+      if (!role) throw new HttpError(400, 'One of the extra roles no longer exists.');
+      assertAssignable(guild, role);
+    }
+    v.extraRoleIds = ids;
+  }
 }
 
 async function applyReactionRoles(guild, guildConfig, body) {
@@ -180,6 +187,16 @@ export function createApiRouter(client, auth) {
   router.get('/guilds/:guildId', async (req, res) => {
     const guild = getGuild(client, req.params.guildId);
     res.json(await describeGuild(guild, await getGuildConfig(guild.id)));
+  });
+
+  router.get('/guilds/:guildId/announcements', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await listAnnouncements(guild));
+  });
+
+  router.post('/guilds/:guildId/announcements', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await sendAnnouncement(guild, req.user, req.body ?? {}));
   });
 
   // Saves a panel's settings and updates the posted panel in place.

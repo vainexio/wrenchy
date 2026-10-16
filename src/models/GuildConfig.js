@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 const verificationSchema = new mongoose.Schema(
   {
     enabled: { type: Boolean, default: true },
-    roleId: { type: String, default: null },
+    roleId: { type: String, default: null }, // main role; having it means "verified"
+    extraRoleIds: { type: [String], default: [] }, // also given on verify, members can remove them later
     channelId: { type: String, default: null },
     messageId: { type: String, default: null },
     content: {

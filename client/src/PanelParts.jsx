@@ -66,6 +66,28 @@ export function RoleOptions({ roles }) {
   ));
 }
 
+/** Multi-role picker: selected roles as removable chips, plus a dropdown to add more. */
+export function RoleChips({ roles, value, onChange, exclude = [] }) {
+  const selected = value.map((id) => roles.find((r) => r.id === id) ?? { id, name: 'deleted-role', problem: 'missing' });
+  const available = roles.filter((r) => !value.includes(r.id) && !exclude.includes(r.id));
+  return (
+    <div className="chips">
+      {selected.map((r) => (
+        <span key={r.id} className={`chip${r.problem ? ' chip-bad' : ''}`} title={r.problem ?? ''}>
+          @{r.name}
+          <button type="button" aria-label={`Remove @${r.name}`} onClick={() => onChange(value.filter((id) => id !== r.id))}>
+            ✕
+          </button>
+        </span>
+      ))}
+      <select className="chip-add" value="" onChange={(e) => e.target.value && onChange([...value, e.target.value])}>
+        <option value="">+ Add role…</option>
+        <RoleOptions roles={available} />
+      </select>
+    </div>
+  );
+}
+
 export function SaveBar({ busy, dirty, canSave = true, onDiscard }) {
   return (
     <div className="actions">

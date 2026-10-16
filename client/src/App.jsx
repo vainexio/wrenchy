@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api, AuthError } from './api.js';
+import AnnouncementEditor from './AnnouncementEditor.jsx';
 import ReactionRolesEditor from './ReactionRolesEditor.jsx';
 import VerificationEditor from './VerificationEditor.jsx';
 
 const TABS = [
   { id: 'verification', label: 'Verification', Editor: VerificationEditor },
   { id: 'reactionRoles', label: 'Reaction Roles', Editor: ReactionRolesEditor },
+  { id: 'announcements', label: 'Announcements', Editor: AnnouncementEditor },
 ];
 
 const LOGIN_ERRORS = {

@@ -159,3 +159,41 @@ small { display: block; margin-top: 6px; }
   .role-button select { grid-column: 1 / -1; }
 }
 .emoji { width: 1.2em; height: 1.2em; vertical-align: -0.25em; object-fit: contain; }
+
+/* Role chips */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 10px;
+  border-radius: 999px; background: color-mix(in srgb, var(--accent) 18%, transparent); font-size: 0.88rem;
+}
+.chip button { border: none; background: none; padding: 2px 6px; font-size: 0.75rem; color: var(--muted); }
+.chip-bad { background: color-mix(in srgb, var(--red) 18%, transparent); }
+.chip-add { width: auto; padding: 4px 8px; font-size: 0.88rem; }
+
+/* Segmented control */
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.segmented button { border: none; border-radius: 0; padding: 6px 12px; font-size: 0.88rem; }
+.segmented button.active { background: var(--accent); color: #1d1d1f; font-weight: 600; }
+.field-inline { margin-top: 14px; }
+
+/* Embed preview */
+.discord-mention { background: rgba(88, 101, 242, 0.3); color: #c9cdfb; border-radius: 3px; padding: 0 2px; font-weight: 500; }
+.discord-embed {
+  margin-top: 8px; background: #2b2d31; border-left: 4px solid; border-radius: 4px; padding: 10px 14px; max-width: 100%;
+}
+.discord-embed-body { display: flex; gap: 12px; }
+.discord-embed-title { font-weight: 700; color: #f2f3f5; margin-bottom: 6px; }
+.discord-embed-title.linked { color: #00a8fc; }
+.discord-embed-desc { white-space: pre-wrap; font-size: 0.88rem; line-height: 1.35; }
+.discord-embed-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 4px; }
+.discord-embed-image { margin-top: 10px; max-width: 100%; border-radius: 4px; display: block; }
+.discord-embed-footer { font-size: 0.72rem; color: #949ba4; margin-top: 8px; }
+
+/* Announcement history */
+.history { list-style: none; margin: 0; padding: 0; }
+.history li {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--border);
+  align-items: baseline;
+}
+.history li:first-child { border-top: none; }
+.history a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -10,11 +10,12 @@ General-purpose Discord bot for **Talyer**, built on the MERN stack:
 ## Features
 
 ### Verification
-New members click a button on the verification panel and get the **Talyerista** role.
+New members click a button on the verification panel and get the **Talyerista** role, plus any extra roles you choose.
 Everything is configured from the **dashboard**:
 
 - Turn verification on/off (the button greys out when off)
-- Choose the role to give (creates `Talyerista` if it doesn't exist)
+- Choose the main role (creates `Talyerista` if it doesn't exist). Having it means "verified".
+- Choose extra roles given at the same time (e.g. Giveaways, Updates). Members can remove them later and won't get them back by verifying again.
 - Edit the panel message (plain text with Discord formatting), button label/emoji, and the reply after verifying, with a live preview
 - Post or re-post the panel in any channel. Saving updates the posted panel in place.
 
@@ -25,6 +26,14 @@ Configured from the dashboard's **Reaction Roles** tab:
 - Edit the panel message and the private "added" / "removed" replies (`{role}` is replaced with the role)
 - Add up to 25 buttons, each with a role, label, and emoji. Pick an existing role or create a new one named after the label.
 - Reorder or remove buttons, turn the panel on/off, and post it in any channel
+
+### Announcements
+Send a message from the bot to any channel from the **Announcements** tab:
+
+- Normal message or embed (title, description, color, title link, image, thumbnail, footer, timestamp)
+- Optional ping: @everyone, @here, or a role
+- Live preview, confirmation before sending, and drafts kept in your browser
+- History of recent announcements with who sent them
 
 ### Dashboard login
 Staff log in with Discord. Only members who have the role in `ADMIN_ROLE_ID` (default `1560157523984646154`) can get in.

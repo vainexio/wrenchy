@@ -4,6 +4,7 @@ import {
   Loading,
   Notice,
   PanelChannelCard,
+  RoleChips,
   RoleOptions,
   SaveBar,
 } from './PanelParts.jsx';
@@ -18,6 +19,7 @@ function toForm(guild) {
   return {
     ...Object.fromEntries(FIELDS.map((k) => [k, v[k] ?? ''])),
     roleId: v.roleId ?? (defaultRole ? defaultRole.id : CREATE_ROLE),
+    extraRoleIds: [...(v.extraRoleIds ?? [])],
   };
 }
 
@@ -48,7 +50,7 @@ export default function VerificationEditor({ guildId, onError }) {
         </p>
 
         <label className="field">
-          <span>Role to give</span>
+          <span>Main role</span>
           <select value={form.roleId} onChange={set('roleId')}>
             {!guild.defaultRoleExists && (
               <option value={CREATE_ROLE}>+ Create “{guild.defaultRoleName}” role</option>
@@ -57,6 +59,20 @@ export default function VerificationEditor({ guildId, onError }) {
           </select>
           {form.roleId === CREATE_ROLE && <small className="muted">The role will be created when you save.</small>}
         </label>
+
+        <div className="field">
+          <span>Extra roles</span>
+          <RoleChips
+            roles={guild.roles}
+            value={form.extraRoleIds}
+            exclude={[form.roleId]}
+            onChange={(extraRoleIds) => setForm({ ...form, extraRoleIds })}
+          />
+          <small className="muted">
+            Also given when someone verifies. Members can remove them later (e.g. with reaction roles) and won’t get
+            them back by verifying again.
+          </small>
+        </div>
 
         <div className="split">
           <div className="fields">
