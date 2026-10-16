@@ -44,11 +44,43 @@ const reactionRolesSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Matched by Roblox group role ID (never rank: ranks can be reordered in the group without breaking anything).
+const robloxBindingSchema = new mongoose.Schema(
+  {
+    robloxRoleId: { type: Number, required: true },
+    robloxRoleName: { type: String, default: '' }, // (for display; the ID is what matches)
+    discordRoleIds: { type: [String], default: [] },
+  },
+  { _id: false },
+);
+
+const robloxSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    channelId: { type: String, default: null },
+    messageId: { type: String, default: null },
+    content: {
+      type: String,
+      default:
+        '**Staff: link your Roblox account**\nClick the button to get a code, then type it in game with `/link`. Your staff roles here follow your rank in the group.',
+    },
+    buttonLabel: { type: String, default: 'Link Roblox' },
+    buttonEmoji: { type: String, default: '🔗' },
+    gameUrl: { type: String, default: '' },
+    linkedRoleId: { type: String, default: null },
+    nicknameEnabled: { type: Boolean, default: true },
+    nicknameFormat: { type: String, default: '{display} (@{username})' },
+    bindings: { type: [robloxBindingSchema], default: [] },
+  },
+  { _id: false },
+);
+
 const guildConfigSchema = new mongoose.Schema(
   {
     guildId: { type: String, required: true, unique: true, index: true },
     verification: { type: verificationSchema, default: () => ({}) },
     reactionRoles: { type: reactionRolesSchema, default: () => ({}) },
+    roblox: { type: robloxSchema, default: () => ({}) },
   },
   { timestamps: true },
 );

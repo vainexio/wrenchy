@@ -35,6 +35,17 @@ Send a message from the bot to any channel from the **Announcements** tab:
 - Live preview, confirmation before sending, and drafts kept in your browser
 - History of recent announcements with who sent them
 
+### Roblox link (staff)
+Staff link their Discord account to their Roblox account, and their Discord roles follow their rank in the group.
+
+1. In Discord, staff press **Link Roblox** on the panel and get a 6-character code (10 minutes).
+2. In Talyer they type `/link CODE` in chat. The game server sends the bot who they are and every group role they hold.
+3. The bot gives the Discord roles bound to those Roblox roles (dashboard **Roblox Link** tab), an optional "linked" role, and sets their nickname.
+
+Bindings match **Roblox role IDs**, never ranks, so reordering ranks in the group doesn't break them. Roles resync whenever linked staff join the game and every 30 minutes (the web check only sees someone's highest role; the game reports all of them). Only staff can link: the game decides who (`Config.Admin.DiscordLink.Roles`).
+
+The game calls `POST /api/game/link` and `POST /api/game/roles` with the `X-Wrenchy-Key` header (= `GAME_API_KEY`). In Roblox the key lives in the experience's **Secrets Store** as `WrenchyKey` (domain `wrenchy.onrender.com`), and **Allow HTTP Requests** must be on. Secrets don't work in Play-in-Studio, so test linking in a live server.
+
 ### Dashboard login
 Staff log in with Discord. Only members who have the role in `ADMIN_ROLE_ID` (default `1560157523984646154`) can get in.
 The role is re-checked on every request, so removing it revokes access immediately.
@@ -52,7 +63,7 @@ The role is re-checked on every request, so removing it revokes access immediate
    - `https://<your-app>.onrender.com/api/auth/callback` (Render)
 
 ### Discord server
-1. Invite the bot (the link is printed in the console on startup). It needs **Manage Roles**.
+1. Invite the bot (the link is printed in the console on startup). It needs **Manage Roles** and **Manage Nicknames**.
 2. In **Server Settings → Roles**, keep Wrenchy's role **above** `Talyerista`.
 3. Hide your channels from `@everyone` and allow `Talyerista` to view them. Keep the verification channel visible to `@everyone`.
 4. Open the dashboard, pick the channel, and click **Post panel**.
@@ -74,7 +85,7 @@ Create a **Web Service** from this repo:
 | Build Command | `npm install && npm run build` |
 | Start Command | `npm start` |
 | Health Check Path | `/api/health` |
-| Environment | `DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `MONGODB_URI`, `ADMIN_ROLE_ID` |
+| Environment | `DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `MONGODB_URI`, `ADMIN_ROLE_ID`, `GAME_API_KEY` |
 
 Render sets `RENDER_EXTERNAL_URL` automatically, which is used for the login redirect. Set `PUBLIC_URL` only if you use a custom domain.
 In MongoDB Atlas, allow Render's IPs under **Network Access** (or `0.0.0.0/0`).

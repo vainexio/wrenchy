@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { VerificationLog } from '../models/Verification.js';
 import { createApiRouter } from './api.js';
 import { createAuthRoutes } from './auth.js';
+import { createGameRouter } from './game.js';
 
 const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../client/dist');
 
@@ -52,6 +53,9 @@ export function createApp(discordClient) {
       totalVerified: counts.reduce((sum, c) => sum + c.count, 0),
     });
   });
+
+  // The Roblox game's own endpoints (key-authenticated, no dashboard session).
+  app.use('/api/game', createGameRouter(discordClient));
 
   // Discord login (dashboard). Everything else under /api below requires a session.
   const auth = createAuthRoutes(discordClient);

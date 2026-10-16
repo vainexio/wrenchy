@@ -197,3 +197,39 @@ small { display: block; margin-top: 6px; }
 }
 .history li:first-child { border-top: none; }
 .history a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Roblox link */
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+.status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.status.ok { color: var(--green); }
+.status.idle { color: var(--muted); }
+.status.bad { color: var(--red); }
+
+.bindings { display: flex; flex-direction: column; gap: 8px; }
+.binding { display: grid; grid-template-columns: minmax(160px, 220px) auto 1fr auto; gap: 10px; align-items: center; }
+.binding-arrow { color: var(--muted); }
+.binding > button { padding: 6px 10px; }
+
+.links { list-style: none; margin: 0; padding: 0; }
+.links li {
+  display: flex; justify-content: space-between; gap: 12px; padding: 12px 0;
+  border-top: 1px solid var(--border); flex-wrap: wrap;
+}
+.links li:first-child { border-top: none; }
+.link-who { display: flex; gap: 10px; align-items: flex-start; min-width: 0; flex: 1; }
+.link-who img, .link-who .guild-icon { width: 36px; height: 36px; border-radius: 50%; flex: none; }
+.link-names { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.link-roles { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.role-pill {
+  font-size: 0.78rem; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.link-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.danger-text { border: none; background: none; color: var(--red); padding: 2px 0; font-weight: 600; }
+
+@media (max-width: 640px) {
+  .binding { grid-template-columns: 1fr auto; }
+  .binding-arrow { display: none; }
+  .binding .chips { grid-column: 1 / -1; grid-row: 2; }
+  .link-meta { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
+}

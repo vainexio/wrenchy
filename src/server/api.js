@@ -7,13 +7,14 @@ import { getGuildConfig } from '../models/GuildConfig.js';
 import { VerificationLog } from '../models/Verification.js';
 import { listAnnouncements, sendAnnouncement } from './announcements.js';
 import { HttpError } from './errors.js';
+import { applyRoblox, robloxOverview, syncGuild, unlink } from './robloxAdmin.js';
 
 const PANEL_CHANNEL_TYPES = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
 const CREATE_DEFAULT_ROLE = '__create__';
 const CREATE_NEW_ROLE = '__new__';
 
 // URL segment -> GuildConfig key
-const PANEL_KINDS = { verification: 'verification', 'reaction-roles': 'reactionRoles' };
+const PANEL_KINDS = { verification: 'verification', 'reaction-roles': 'reactionRoles', roblox: 'roblox' };
 
 const VERIFICATION_TEXT = {
   content: { max: 2000, required: true },
@@ -72,9 +73,11 @@ async function describeGuild(guild, guildConfig) {
     panelUrls: {
       verification: panelUrl(guild, guildConfig.verification),
       reactionRoles: panelUrl(guild, guildConfig.reactionRoles),
+      roblox: panelUrl(guild, guildConfig.roblox),
     },
     verification: guildConfig.verification.toObject(),
     reactionRoles: guildConfig.reactionRoles.toObject(),
+    roblox: guildConfig.roblox.toObject(),
   };
 }
 
@@ -160,11 +163,12 @@ async function applyReactionRoles(guild, guildConfig, body) {
   rr.buttons = buttons;
 }
 
-const APPLY = { verification: applyVerification, reactionRoles: applyReactionRoles };
+const APPLY = { verification: applyVerification, reactionRoles: applyReactionRoles, roblox: applyRoblox };
 
 const PANEL_REQUIREMENTS = {
   verification: (s) => (s.roleId ? null : 'Choose a verified role and save first.'),
   reactionRoles: (s) => (s.buttons.length ? null : 'Add at least one role button and save first.'),
+  roblox: () => null,
 };
 
 function getKind(req) {
@@ -199,6 +203,24 @@ export function createApiRouter(client, auth) {
     res.json(await sendAnnouncement(guild, req.user, req.body ?? {}));
   });
 
+  // Roblox linking: live data, resync, unlink
+  router.get('/guilds/:guildId/roblox', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await robloxOverview(client, guild));
+  });
+
+  router.post('/guilds/:guildId/roblox/sync', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const result = await syncGuild(guild, await getGuildConfig(guild.id));
+    res.json({ ...result, ...(await robloxOverview(client, guild)) });
+  });
+
+  router.delete('/guilds/:guildId/roblox/links/:discordId', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    await unlink(client, req.params.discordId);
+    res.json(await robloxOverview(client, guild));
+  });
+
   // Saves a panel's settings and updates the posted panel in place.
   router.put('/guilds/:guildId/:kind', async (req, res) => {
     const kind = getKind(req);
@@ -213,6 +235,10 @@ export function createApiRouter(client, auth) {
       throw new HttpError(400, `Discord rejected the panel (is every emoji valid?): ${err.message}`);
     }
     await guildConfig.save();
+    // (new role bindings apply to everyone already linked)
+    if (kind === 'roblox') {
+      syncGuild(guild, guildConfig).catch((err) => console.error('[roblox] resync after save failed:', err));
+    }
     res.json(await describeGuild(guild, guildConfig));
   });
 

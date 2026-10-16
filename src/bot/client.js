@@ -1,20 +1,26 @@
 import { Client, Events, GatewayIntentBits, MessageFlags, PermissionsBitField } from 'discord.js';
 import { commandData, commands } from './commands/index.js';
+import { handleLinkButton, LINK_BUTTON_IDS } from './interactions/linkButton.js';
 import { handleRoleButton } from './interactions/roleButton.js';
 import { handleVerifyButton } from './interactions/verifyButton.js';
 import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
+import { recheckAll } from '../roblox/sync.js';
 
 const buttonHandlers = {
   [VERIFY_BUTTON_ID]: handleVerifyButton,
+  ...Object.fromEntries(LINK_BUTTON_IDS.map((id) => [id, handleLinkButton])),
 };
 
-// View Channels, Send Messages, Embed Links, Read Message History, Manage Roles
+const RECHECK_EVERY_MS = 30 * 60 * 1000;
+
+// View Channels, Send Messages, Embed Links, Read Message History, Manage Roles, Manage Nicknames
 const INVITE_PERMISSIONS = new PermissionsBitField([
   'ViewChannel',
   'SendMessages',
   'EmbedLinks',
   'ReadMessageHistory',
   'ManageRoles',
+  'ManageNicknames',
 ]).bitfield;
 
 export const client = new Client({
@@ -37,6 +43,9 @@ client.once(Events.ClientReady, async (c) => {
       `&permissions=${INVITE_PERMISSIONS}&scope=bot%20applications.commands`,
   );
   await Promise.all(c.guilds.cache.map(registerCommands));
+
+  // Roblox links: recheck everyone's group rank every 30 minutes (promotions / demotions apply on their own)
+  setInterval(() => recheckAll(c).catch((err) => console.error('[roblox] recheck failed:', err)), RECHECK_EVERY_MS);
 });
 
 client.on(Events.GuildCreate, registerCommands);

@@ -2,6 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 
 export const VERIFY_BUTTON_ID = 'wrenchy:verify';
 export const ROLE_BUTTON_PREFIX = 'wrenchy:role:';
+export const LINK_BUTTON_ID = 'wrenchy:link';
 export const MAX_ROLE_BUTTONS = 25; // Discord limit: 5 rows × 5 buttons
 
 function buildVerificationPanel(verification) {
@@ -37,10 +38,21 @@ function buildReactionRolesPanel(reactionRoles) {
   return { content: reactionRoles.content, embeds: [], components: rows };
 }
 
+function buildRobloxPanel(roblox) {
+  const button = new ButtonBuilder()
+    .setCustomId(LINK_BUTTON_ID)
+    .setLabel(roblox.buttonLabel)
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(!roblox.enabled);
+  if (roblox.buttonEmoji) button.setEmoji(roblox.buttonEmoji);
+  return { content: roblox.content, embeds: [], components: [new ActionRowBuilder().addComponents(button)] };
+}
+
 // Each panel kind maps to a sub-document of GuildConfig and a message builder.
 const PANELS = {
   verification: buildVerificationPanel,
   reactionRoles: buildReactionRolesPanel,
+  roblox: buildRobloxPanel,
 };
 
 async function fetchExistingPanel(guild, settings) {
