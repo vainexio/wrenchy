@@ -46,6 +46,11 @@ Bindings match **Roblox role IDs**, never ranks, so reordering ranks in the grou
 
 The game calls `POST /api/game/link` and `POST /api/game/roles` with the `X-Wrenchy-Key` header (= `GAME_API_KEY`). In Roblox the key lives in the experience's **Secrets Store** as `WrenchyKey` (domain `wrenchy.onrender.com`), and **Allow HTTP Requests** must be on. Secrets don't work in Play-in-Studio, so test linking in a live server.
 
+### Auto-farm flags
+The game's auto-farm watch (`ServerScriptService.Modules.AntiCheat`) flags players whose play no person could produce (walking through walls, floating, teleporting, swinging faster than the wrench allows, checking in customers with no window open, instant kahera payments...). Each game server sends its flags in batches to `POST /api/game/flag` (same `X-Wrenchy-Key`), and the bot posts them as embeds in the flag channel: `FLAG_CHANNEL_ID`, default `1561264779505705040`.
+
+It's flag only: the game never punishes anyone for a flag. There's no server ID in the post. Mods search the username on the in-game admin panel (**FLAGS** page, or the player's profile). Wrenchy needs **View Channel**, **Send Messages** and **Embed Links** in that channel.
+
 ### Dashboard login
 Staff log in with Discord. Only members who have the role in `ADMIN_ROLE_ID` (default `1560157523984646154`) can get in.
 The role is re-checked on every request, so removing it revokes access immediately.

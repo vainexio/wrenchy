@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { EmbedBuilder, escapeMarkdown } from 'discord.js';
 import express from 'express';
 import { notifyLinked } from '../bot/interactions/linkButton.js';
 import { config } from '../config.js';
@@ -43,6 +44,36 @@ function readPlayer(body) {
       .map((r) => ({ id: Number(r?.id), name: String(r?.name ?? '').slice(0, 100), rank: Number(r?.rank) }))
       .filter((r) => Number.isSafeInteger(r.id) && Number.isFinite(r.rank) && r.rank > 0),
   };
+}
+
+// Flags from the game's auto-farm watch (ServerScriptService.Modules.AntiCheat). Flag only: the game never punishes
+// anyone for them; mods search the username on the in-game admin panel, so no server id is sent.
+const FLAG_COLORS = { 3: 0xe04848, 2: 0xf0a030 };
+
+function clip(value, max) {
+  return typeof value === 'string' ? value.slice(0, max) : '';
+}
+
+/** One flag as an embed, or null if it doesn't name a real player. */
+function flagEmbed(flag, place) {
+  const userId = Number(flag?.userId);
+  const username = clip(flag?.username, 40);
+  if (!Number.isSafeInteger(userId) || userId <= 0 || !username) return null;
+  const displayName = clip(flag?.displayName, 40) || username;
+  const at = Number(flag?.at);
+  return new EmbedBuilder()
+    .setColor(FLAG_COLORS[Number(flag?.weight)] ?? FLAG_COLORS[2])
+    .setTitle(`🚩 ${clip(flag?.title, 100) || 'Flagged'}`)
+    .setURL(`https://www.roblox.com/users/${userId}/profile`)
+    .setDescription(clip(flag?.text, 1000) || '-')
+    .addFields(
+      { name: 'Player', value: escapeMarkdown(`${displayName} (@${username})`), inline: true },
+      { name: 'Seen', value: `${Number(flag?.times) || 1}× this session`, inline: true },
+      { name: 'Where', value: place, inline: true },
+      { name: 'Context', value: clip(flag?.context, 300) || '-' },
+    )
+    .setFooter({ text: 'Flag only: nothing was done to the player. Search the username on the admin panel.' })
+    .setTimestamp(Number.isFinite(at) && at > 0 ? new Date(at * 1000) : new Date());
 }
 
 export function createGameRouter(client) {
@@ -96,6 +127,19 @@ export function createGameRouter(client) {
     await link.save();
     await syncEverywhere(client, link.discordId, link);
     res.json({ linked: true });
+  });
+
+  // The auto-farm watch flagged players on a game server: up to 10 at a time, posted in the flag channel.
+  router.post('/flag', async (req, res) => {
+    const place = clip(req.body?.place, 20) || 'Live';
+    const flags = Array.isArray(req.body?.flags) ? req.body.flags.slice(0, 10) : [];
+    const embeds = flags.map((flag) => flagEmbed(flag, place)).filter(Boolean);
+    if (!embeds.length) throw new HttpError(400, 'No flags.');
+
+    const channel = await client.channels.fetch(config.flagChannelId).catch(() => null);
+    if (!channel?.isTextBased()) throw new HttpError(502, `Can't post in the flag channel (${config.flagChannelId}).`);
+    await channel.send({ embeds, allowedMentions: { parse: [] } });
+    res.json({ ok: true, posted: embeds.length });
   });
 
   router.use((err, _req, res, _next) => {
