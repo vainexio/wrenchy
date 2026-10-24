@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { connectDatabase } from './db.js';
 import { client } from './bot/client.js';
 import { createApp } from './server/app.js';
+import { flushMessages } from './team/discordActivity.js';
 
 async function main() {
   // Start the web server first so Render's port/health check passes quickly.
@@ -17,6 +18,7 @@ async function main() {
   const shutdown = async (signal) => {
     console.log(`[app] ${signal} received, shutting down`);
     server.close();
+    await flushMessages().catch(() => {}); // (the last half minute of chat)
     await client.destroy();
     await mongoose.disconnect();
     process.exit(0);

@@ -75,12 +75,55 @@ const robloxSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Team activity (dashboard Team tab, /inactive): who counts as a tester or staff, by their Roblox group roles and
+// their Discord roles, and how long without playing or chatting makes them inactive.
+const teamGroupSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    robloxRoleIds: { type: [Number], default: [] },
+    discordRoleIds: { type: [String], default: [] },
+  },
+  { _id: false },
+);
+
+// (Piyesa Studios' roles as of 2026-10-25; the dashboard edits them)
+const DEFAULT_TEAM_GROUPS = [
+  { name: 'Testers', robloxRoleIds: [899226015], discordRoleIds: ['1561971641225973780'] },
+  {
+    name: 'Staff',
+    // DC Moderator, Game Moderator, Baguhang Tanod, Tanod, Beteranong Tanod, Kagawad, Kapitan, Foreman, Mekaniko
+    robloxRoleIds: [894162033, 893636029, 893364008, 871369028, 893598027, 878435067, 878363074, 869367039, 866334009],
+    discordRoleIds: [
+      '1556161267012603994', // Discord Moderator
+      '1554369481231310858', // Game Moderator
+      '1560160891746394112', // Baguhang Tanod
+      '1560598634750550097', // Tanod
+      '1560542090876948532', // Beteranong Tanod
+      '1560547252471201792', // Kagawad
+      '1556161118483783741', // Kapitan
+      '1555103499644313660', // Foreman
+      '1555246358947045546', // Mekaniko
+    ],
+  },
+];
+
+const teamSchema = new mongoose.Schema(
+  {
+    groups: { type: [teamGroupSchema], default: () => DEFAULT_TEAM_GROUPS },
+    inactiveDays: { type: Number, default: 7 },
+    discordSince: { type: Date, default: null }, // (when the bot began counting messages here)
+    scannedAt: { type: Date, default: null }, // (the last history scan)
+  },
+  { _id: false },
+);
+
 const guildConfigSchema = new mongoose.Schema(
   {
     guildId: { type: String, required: true, unique: true, index: true },
     verification: { type: verificationSchema, default: () => ({}) },
     reactionRoles: { type: reactionRolesSchema, default: () => ({}) },
     roblox: { type: robloxSchema, default: () => ({}) },
+    team: { type: teamSchema, default: () => ({}) },
   },
   { timestamps: true },
 );

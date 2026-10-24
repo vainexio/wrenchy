@@ -3,6 +3,7 @@ import { api, AuthError } from './api.js';
 import AnnouncementEditor from './AnnouncementEditor.jsx';
 import ReactionRolesEditor from './ReactionRolesEditor.jsx';
 import RobloxEditor from './RobloxEditor.jsx';
+import TeamEditor from './TeamEditor.jsx';
 import VerificationEditor from './VerificationEditor.jsx';
 
 const TABS = [
@@ -10,6 +11,7 @@ const TABS = [
   { id: 'reactionRoles', label: 'Reaction Roles', Editor: ReactionRolesEditor },
   { id: 'announcements', label: 'Announcements', Editor: AnnouncementEditor },
   { id: 'roblox', label: 'Roblox Link', Editor: RobloxEditor },
+  { id: 'team', label: 'Team', Editor: TeamEditor },
 ];
 
 const LOGIN_ERRORS = {

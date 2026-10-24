@@ -3,6 +3,7 @@ import { EmbedBuilder, escapeMarkdown } from 'discord.js';
 import express from 'express';
 import { notifyLinked } from '../bot/interactions/linkButton.js';
 import { config } from '../config.js';
+import { PlayerActivity } from '../models/Activity.js';
 import { LinkCode } from '../models/LinkCode.js';
 import { RobloxLink } from '../models/RobloxLink.js';
 import { rememberRoles } from '../roblox/api.js';
@@ -140,6 +141,35 @@ export function createGameRouter(client) {
     if (!channel?.isTextBased()) throw new HttpError(502, `Can't post in the flag channel (${config.flagChannelId}).`);
     await channel.send({ embeds, allowedMentions: { parse: [] } });
     res.json({ ok: true, posted: embeds.length });
+  });
+
+  // Who of the group is playing (the Team tab: last played, time in game). A game server reports group members (rank
+  // 2 and up) as they join, every few minutes while they play ("here", with the minutes since its last report) and as
+  // they leave: up to 50 at a time.
+  router.post('/presence', async (req, res) => {
+    const event = req.body?.event;
+    if (!['join', 'here', 'leave'].includes(event)) throw new HttpError(400, 'Bad event.');
+    const gameName = clip(req.body?.game, 40);
+    const players = Array.isArray(req.body?.players) ? req.body.players.slice(0, 50) : [];
+    const now = new Date();
+    const ops = [];
+    for (const raw of players) {
+      const userId = Number(raw?.userId);
+      const username = clip(raw?.username, 40);
+      if (!Number.isSafeInteger(userId) || userId <= 0 || !username) continue;
+      const minutes = Math.min(Math.max(Number(raw?.minutes) || 0, 0), 30); // (a report covers 5 minutes at most)
+      const set = { username, displayName: clip(raw?.displayName, 40) || username, game: gameName, lastSeenAt: now, online: event !== 'leave' };
+      if (event === 'join') set.lastJoinAt = now;
+      ops.push({
+        updateOne: {
+          filter: { robloxId: userId },
+          update: { $set: set, $inc: { minutes, sessions: event === 'join' ? 1 : 0 } },
+          upsert: true,
+        },
+      });
+    }
+    if (ops.length) await PlayerActivity.bulkWrite(ops, { ordered: false });
+    res.json({ ok: true, recorded: ops.length });
   });
 
   router.use((err, _req, res, _next) => {

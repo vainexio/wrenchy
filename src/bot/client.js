@@ -5,6 +5,7 @@ import { handleRoleButton } from './interactions/roleButton.js';
 import { handleVerifyButton } from './interactions/verifyButton.js';
 import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
 import { recheckAll } from '../roblox/sync.js';
+import { recordMessage, startDiscordActivity } from '../team/discordActivity.js';
 
 const buttonHandlers = {
   [VERIFY_BUTTON_ID]: handleVerifyButton,
@@ -23,8 +24,10 @@ const INVITE_PERMISSIONS = new PermissionsBitField([
   'ManageNicknames',
 ]).bitfield;
 
+// Guild Members (privileged: on in the Developer Portal) lists who holds which role for the Team tab; Guild Messages
+// tells when members chat (the time only: no Message Content intent, so the bot never sees the text).
 export const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages],
 });
 
 async function registerCommands(guild) {
@@ -46,12 +49,19 @@ client.once(Events.ClientReady, async (c) => {
 
   // Roblox links: recheck everyone's group rank every 30 minutes (promotions / demotions apply on their own)
   setInterval(() => recheckAll(c).catch((err) => console.error('[roblox] recheck failed:', err)), RECHECK_EVERY_MS);
+  startDiscordActivity(c);
 });
+
+client.on(Events.MessageCreate, recordMessage);
 
 client.on(Events.GuildCreate, registerCommands);
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.inCachedGuild()) return;
+  if (interaction.isAutocomplete()) {
+    await commands.get(interaction.commandName)?.autocomplete?.(interaction).catch(() => {});
+    return;
+  }
 
   let handler;
   if (interaction.isChatInputCommand()) handler = commands.get(interaction.commandName)?.execute;

@@ -8,6 +8,7 @@ import { VerificationLog } from '../models/Verification.js';
 import { listAnnouncements, sendAnnouncement } from './announcements.js';
 import { HttpError } from './errors.js';
 import { applyRoblox, robloxOverview, syncGuild, unlink } from './robloxAdmin.js';
+import { matchMember, saveTeam, startScan, teamOverview } from './teamAdmin.js';
 
 const PANEL_CHANNEL_TYPES = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
 const CREATE_DEFAULT_ROLE = '__create__';
@@ -213,6 +214,29 @@ export function createApiRouter(client, auth) {
     const guild = getGuild(client, req.params.guildId);
     const result = await syncGuild(guild, await getGuildConfig(guild.id));
     res.json({ ...result, ...(await robloxOverview(client, guild)) });
+  });
+
+  // Team activity: who of the testers / staff last played and last chatted, and when
+  router.get('/guilds/:guildId/team', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await teamOverview(guild));
+  });
+
+  router.put('/guilds/:guildId/team', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    await saveTeam(guild, req.body ?? {});
+    res.json(await teamOverview(guild));
+  });
+
+  router.put('/guilds/:guildId/team/match', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    await matchMember(guild, req.body ?? {});
+    res.json(await teamOverview(guild));
+  });
+
+  router.post('/guilds/:guildId/team/scan', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(startScan(guild));
   });
 
   router.delete('/guilds/:guildId/roblox/links/:discordId', async (req, res) => {

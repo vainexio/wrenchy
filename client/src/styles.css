@@ -233,3 +233,20 @@ small { display: block; margin-top: 6px; }
   .binding .chips { grid-column: 1 / -1; grid-row: 2; }
   .link-meta { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
 }
+
+/* Team */
+.team-tools { margin-bottom: 12px; align-items: center; }
+.team-tools .segmented { flex-wrap: wrap; }
+.team li.quiet .link-names strong { color: var(--text); }
+.team-cells { display: grid; grid-template-columns: 150px 150px; gap: 12px; align-items: start; }
+.team-cells > div { display: flex; flex-direction: column; gap: 4px; }
+.activity { display: flex; flex-direction: column; gap: 2px; }
+.activity .muted { font-size: 0.8rem; }
+.link-text { border: none; background: none; color: var(--accent); padding: 2px 0; font-weight: 600; font-size: 0.85rem; }
+.match-pick { margin-top: 6px; max-width: 320px; }
+.team-group { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 4px; }
+.small-wide { max-width: 360px; }
+
+@media (max-width: 640px) {
+  .team-cells { grid-template-columns: 1fr 1fr; width: 100%; }
+}

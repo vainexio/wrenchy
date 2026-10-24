@@ -51,12 +51,25 @@ The game's auto-farm watch (`ServerScriptService.Modules.AntiCheat`) flags playe
 
 It's flag only: the game never punishes anyone for a flag. There's no server ID in the post. Mods search the username on the in-game admin panel (**FLAGS** page, or the player's profile). Wrenchy needs **View Channel**, **Send Messages** and **Embed Links** in that channel.
 
+### Team activity
+The dashboard's **Team** tab lists every tester and staff member with when they last **played** and last **chatted in Discord**, and flags who's been quiet for longer than the set days (default 7).
+
+- **Who's in each group:** anyone holding one of the group's Roblox roles in the Piyesa group (read from Roblox's public role lists) or one of its Discord roles. The groups (Testers, Staff by default) and their roles are edited at the bottom of the tab.
+- **Roblox ↔ Discord:** the same person when they linked through the game, someone matched them on the tab (**Match Discord**), or their Discord name gives the Roblox username away (`Name (@username)`, `username`). Matching by hand gives no roles.
+- **Last played:** Mangingisda (`ServerScriptService.Modules.TeamActivity`) reports group members (rank 2+) to `POST /api/game/presence` as they join, every 5 minutes while they play, and as they leave (same `X-Wrenchy-Key`). The tab shows who's in game now and the hours played since tracking began.
+- **Last message:** Wrenchy notes when each member sends a message and in which channel, never the text (Guild Messages intent, no Message Content). **Scan Discord history** fills in the time before tracking began from the newest 1,000 messages of every channel it can read.
+
+`/inactive [group] [days]` shows the inactive list in Discord (private reply, dashboard role only).
+
+Needs the **Server Members Intent** in the Developer Portal (Bot → Privileged Gateway Intents) and **Read Message History** for the scan.
+
 ### Dashboard login
 Staff log in with Discord. Only members who have the role in `ADMIN_ROLE_ID` (default `1560157523984646154`) can get in.
 The role is re-checked on every request, so removing it revokes access immediately.
 
 ### Slash commands
 - `/ping`: checks if the bot is alive
+- `/inactive`: testers and staff who haven't played or chatted for a while
 
 ## Setup
 
