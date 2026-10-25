@@ -1,18 +1,14 @@
 import crypto from 'node:crypto';
 import { EmbedBuilder, escapeMarkdown } from 'discord.js';
 import express from 'express';
-import { notifyLinked } from '../bot/interactions/linkButton.js';
 import { config } from '../config.js';
 import { PlayerActivity } from '../models/Activity.js';
-import { LinkCode } from '../models/LinkCode.js';
-import { RobloxLink } from '../models/RobloxLink.js';
 import { rememberRoles } from '../roblox/api.js';
-import { syncEverywhere } from '../roblox/sync.js';
 import { HttpError } from './errors.js';
 
-// Endpoints the Roblox game server calls (ServerScriptService.Modules.DiscordLink). Authenticated with a shared key
-// in the X-Wrenchy-Key header (the game keeps it in its Secrets Store). The game decides who may link (staff only)
-// and vouches for the player's identity: Roblox tells the game server who each player is.
+// Endpoints the Roblox game server calls: team presence (Modules.TeamActivity) and auto-farm flags (Modules.AntiCheat).
+// Authenticated with a shared key in the X-Wrenchy-Key header (the game keeps it in its Secrets Store). (Linking a
+// Discord account in the game, /link and /roles, was removed 2026-10-25: Bloxlink links everyone, roblox/verified.js)
 
 export const gameStatus = { lastSeenAt: null };
 
@@ -86,48 +82,6 @@ export function createGameRouter(client) {
     const roles = Array.isArray(req.body?.roles) ? readPlayer(req.body).roles : [];
     rememberRoles(config.defaultRobloxGroupId, roles).catch((err) => console.error('[game] remember roles:', err.message));
     next();
-  });
-
-  // A staff member typed /link CODE in game.
-  router.post('/link', async (req, res) => {
-    const player = readPlayer(req.body);
-    const code = typeof req.body.code === 'string' ? req.body.code.trim().toUpperCase() : '';
-    const entry = code && (await LinkCode.findOneAndDelete({ code, expiresAt: { $gt: new Date() } }));
-    if (!entry) throw new HttpError(404, 'That code is wrong or expired. Get a new one in Discord.');
-
-    // One Roblox account per Discord account and back: drop whatever either side was linked to before.
-    const replaced = await RobloxLink.find({
-      $or: [{ discordId: entry.discordId }, { robloxId: player.robloxId }],
-    });
-    await RobloxLink.deleteMany({ _id: { $in: replaced.map((l) => l._id) } });
-    for (const old of replaced.filter((l) => l.discordId !== entry.discordId)) {
-      await syncEverywhere(client, old.discordId, null); // (that other Discord account loses the roles)
-    }
-
-    const link = await RobloxLink.create({
-      discordId: entry.discordId,
-      ...player,
-      rolesFrom: 'game',
-      rolesAt: new Date(),
-    });
-    await syncEverywhere(client, link.discordId, link);
-    await notifyLinked(code, link);
-
-    const user = await client.users.fetch(link.discordId).catch(() => null);
-    console.log(`[roblox] @${link.username} (${link.robloxId}) linked to ${user?.tag ?? link.discordId}`);
-    res.json({ ok: true, discordName: user ? user.globalName || user.username : 'your Discord account' });
-  });
-
-  // A staff member joined a game server: their full set of group roles, so Discord can follow promotions.
-  router.post('/roles', async (req, res) => {
-    const player = readPlayer(req.body);
-    const link = await RobloxLink.findOne({ robloxId: player.robloxId });
-    if (!link) return res.json({ linked: false });
-
-    Object.assign(link, player, { rolesFrom: 'game', rolesAt: new Date() });
-    await link.save();
-    await syncEverywhere(client, link.discordId, link);
-    res.json({ linked: true });
   });
 
   // The auto-farm watch flagged players on a game server: up to 10 at a time, posted in the flag channel.

@@ -69,7 +69,8 @@ const robloxSchema = new mongoose.Schema(
     gameUrl: { type: String, default: '' },
     linkedRoleId: { type: String, default: null },
     // Bloxlink verification: members holding this role whose nickname is "Display (@username)" are linked to that
-    // Roblox account (roblox/verified.js). null = off (only links made in the game)
+    // Roblox account (roblox/verified.js). null = off: nobody is linked. (channelId / messageId / content / button* /
+    // gameUrl / nickname*: the old in-game link panel and rename, unused since 2026-10-25)
     verifiedRoleId: { type: String, default: null },
     nicknameEnabled: { type: Boolean, default: true },
     nicknameFormat: { type: String, default: '{display} (@{username})' },

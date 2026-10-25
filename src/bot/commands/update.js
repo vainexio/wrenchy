@@ -19,9 +19,8 @@ export function describeUpdate(r) {
   const name = escapeMarkdown(r.member.displayName);
   const e = new EmbedBuilder().setTitle(`Updated ${name}`);
   if (r.link) {
-    const how = r.link.source === 'game' ? 'linked in the game' : 'from their Bloxlink nickname';
     e.setColor(r.added.length || r.removed.length ? 0x2fb36b : 0x5865f2).setDescription(
-      `[${escapeMarkdown(r.link.displayName || r.link.username)} (@${escapeMarkdown(r.link.username)})](https://www.roblox.com/users/${r.link.robloxId}/profile), ${how}.`,
+      `[${escapeMarkdown(r.link.displayName || r.link.username)} (@${escapeMarkdown(r.link.username)})](https://www.roblox.com/users/${r.link.robloxId}/profile), from their Bloxlink nickname.`,
     );
     const roles = r.link.roles.slice().sort((a, b) => b.rank - a.rank).map((x) => x.name);
     e.addFields({ name: 'Group roles', value: roles.length ? roles.join(', ') : 'None (not in the group, or no bound roles)' });

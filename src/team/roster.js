@@ -6,9 +6,9 @@ import { getKnownGroupRoles, getRoleMembers } from '../roblox/api.js';
 // The Team tab and /inactive: everyone in each team group (Testers, Staff...), from the Roblox group's role lists and
 // the server's Discord roles, joined into one row per person, with when they last played and last chatted.
 //
-// A Roblox account and a Discord account are the same person when (in order): they linked through the game
-// (RobloxLink), someone matched them on the dashboard (TeamMatch), or the Discord name gives the Roblox username away
-// (Bloxlink-style nicknames: "Name (@username)", "username", "@username").
+// A Roblox account and a Discord account are the same person when (in order): Bloxlink linked them (RobloxLink:
+// the Verified role and their nickname, roblox/verified.js), someone matched them on the dashboard (TeamMatch), or the
+// Discord name gives the Roblox username away (Bloxlink-style nicknames: "Name (@username)", "username", "@username").
 
 const MEMBERS_TTL_MS = 10 * 60 * 1000;
 const membersFetchedAt = new Map(); // guildId -> time

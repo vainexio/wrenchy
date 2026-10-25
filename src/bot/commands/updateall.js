@@ -46,7 +46,7 @@ export async function execute(interaction) {
         `Checked **${s.checked}** members: **${s.linked}** linked, **${s.changed}** had roles changed, **${s.unlinked}** unlinked.`,
       );
     if (!gc.roblox.verifiedRoleId) {
-      e.addFields({ name: 'Bloxlink', value: 'No Verified role is set on the dashboard’s Roblox Link page, so only game links were checked.' });
+      e.addFields({ name: 'Bloxlink', value: 'No Verified role is set on the dashboard’s Roblox Link page, so nobody can be linked.' });
     }
     if (s.notLinked.length) {
       const lines = s.notLinked.slice(0, 15).map((n) => `${escapeMarkdown(n.member.displayName)}: ${n.why}`);

@@ -1,19 +1,15 @@
 import { Client, Events, GatewayIntentBits, MessageFlags, PermissionsBitField } from 'discord.js';
 import { commandData, commands } from './commands/index.js';
-import { handleLinkButton, LINK_BUTTON_IDS } from './interactions/linkButton.js';
 import { handleRoleButton } from './interactions/roleButton.js';
 import { handleVerifyButton } from './interactions/verifyButton.js';
 import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
-import { getGuildConfig } from '../models/GuildConfig.js';
-import { isVerified, nicknameUsername, recheckAll, updateMember } from '../roblox/verified.js';
+import { GuildConfig, getGuildConfig } from '../models/GuildConfig.js';
+import { isVerified, nicknameUsername, updateMember } from '../roblox/verified.js';
 import { recordMessage, startDiscordActivity } from '../team/discordActivity.js';
 
 const buttonHandlers = {
   [VERIFY_BUTTON_ID]: handleVerifyButton,
-  ...Object.fromEntries(LINK_BUTTON_IDS.map((id) => [id, handleLinkButton])),
 };
-
-const RECHECK_EVERY_MS = 30 * 60 * 1000;
 
 // View Channels, Send Messages, Embed Links, Read Message History, Manage Roles, Manage Nicknames
 const INVITE_PERMISSIONS = new PermissionsBitField([
@@ -48,13 +44,26 @@ client.once(Events.ClientReady, async (c) => {
   );
   await Promise.all(c.guilds.cache.map(registerCommands));
 
-  // Roblox links: recheck everyone's group roles every 30 minutes (promotions / demotions / Bloxlink verifications
-  // apply on their own: roblox/verified.js)
-  setInterval(() => recheckAll(c).catch((err) => console.error('[roblox] recheck failed:', err)), RECHECK_EVERY_MS);
+  await removeLinkPanels(c);
   startDiscordActivity(c);
 });
 
 client.on(Events.MessageCreate, recordMessage);
+
+// The Roblox link panel ("Link Roblox": a code typed in the game) is gone since 2026-10-25, the owner: "bloxlink
+// handles the linking". Its message, if one was posted, is deleted once so nobody presses a dead button
+async function removeLinkPanels(c) {
+  const configs = await GuildConfig.find({ 'roblox.messageId': { $ne: null } });
+  for (const gc of configs) {
+    const channel = await c.channels.fetch(gc.roblox.channelId).catch(() => null);
+    const message = channel?.isTextBased() ? await channel.messages.fetch(gc.roblox.messageId).catch(() => null) : null;
+    await message?.delete().catch(() => {});
+    gc.roblox.channelId = null;
+    gc.roblox.messageId = null;
+    await gc.save();
+    console.log(`[roblox] removed the old link panel in ${gc.guildId}`);
+  }
+}
 
 // Bloxlink verified someone (the Verified role), unverified them, or their nickname changed: update them a moment
 // later (Bloxlink often gives the role and the nickname one after the other)

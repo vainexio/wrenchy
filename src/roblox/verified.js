@@ -1,5 +1,4 @@
 import { config } from '../config.js';
-import { GuildConfig } from '../models/GuildConfig.js';
 import { RobloxLink } from '../models/RobloxLink.js';
 import { getKnownGroupRoles, getRoleMembers, resolveUsernames } from './api.js';
 import { syncMember } from './sync.js';
@@ -7,12 +6,15 @@ import { syncMember } from './sync.js';
 // RANK SYNC FROM BLOXLINK (the owner, 2026-10-25: "if they have "Verified" role, then that means they are verified by
 // the bloxlink bot and their nickname would be "display name (@username)" ... Use that as the bind, and thennn. Bind
 // their roles from the group"). A member holding the server's Verified role (GuildConfig roblox.verifiedRoleId) whose
-// nickname ends in "(@username)" is linked to that Roblox account (a RobloxLink with source "nickname"); a game link
-// (/link in the game) always wins over it. Their group roles come from the bound roles' member lists, which list a
-// member under EVERY role they hold (the per-user API only gives the highest); private roles still come from the game.
-// Then the role bindings give and take their Discord roles (roblox/sync.js syncMember).
-//   updateMember(guild, rc, member)   one member: /update, a Verified role or nickname change
-//   updateGuild(guild, rc, opts)      every Verified or linked member: /updateall, the dashboard, every 30 minutes
+// nickname ends in "(@username)" is linked to that Roblox account (a RobloxLink). Bloxlink, an outside bot, does the
+// verifying: Wrenchy only reads its role and nickname ("bloxlink handles the linking ... u just base it on their
+// nicknames if they are verified and has the verified role"). Their group roles come from the bound roles' member
+// lists, which list a member under EVERY role they hold (the per-user API only gives the highest). Then the role
+// bindings give and take their Discord roles (roblox/sync.js syncMember). No timer and nothing from the game ("No need
+// for play time and interval updates"): it runs when
+//   updateMember(guild, rc, member)   one member: /update, or their Verified role or nickname changes
+//   updateGuild(guild, rc, opts)      every Verified or linked member: /updateall, the dashboard's Update everyone and
+//                                     a saved Roblox Link page
 // Someone who loses the Verified role (or whose nickname stops naming the account) is unlinked and loses the bound
 // roles. A Verified member with no "(@username)" in their nickname is only reported: nothing of theirs is touched.
 
@@ -26,7 +28,8 @@ export const isVerified = (rc, member) => Boolean(rc.verifiedRoleId && member.ro
 
 /**
  * What the role sync needs, asked once per run: the known group roles, and who holds each bound role (public ones:
- * Roblox hides private roles' members). fresh = straight from Roblox (/update), else the 10-minute cache.
+ * Roblox hides a private role's members, so binding one does nothing). fresh = straight from Roblox (/update), else
+ * the 10-minute cache.
  */
 export async function rolesContext(rc, { fresh = false } = {}) {
   const groupId = config.defaultRobloxGroupId;
@@ -45,18 +48,15 @@ export async function rolesContext(rc, { fresh = false } = {}) {
   return { known, holders, fetched, resolved: new Map() };
 }
 
-/** A link's roles from the member lists (the roles not read there, the game's private ones, kept). Changed? */
+/** A link's bound group roles, from the member lists. Changed? */
 function refreshRoles(link, ctx) {
-  const fromWeb = [...(ctx.holders.get(link.robloxId) ?? [])].map((id) => {
+  const next = [...(ctx.holders.get(link.robloxId) ?? [])].map((id) => {
     const r = ctx.known.get(id);
     return { id: r.id, name: r.name, rank: r.rank };
   });
-  const kept = link.roles.filter((r) => !ctx.fetched.has(r.id));
-  const next = [...fromWeb, ...kept];
   const key = (list) => list.map((r) => r.id).sort().join(',');
   if (key(next) === key(link.roles)) return false;
   link.roles = next;
-  link.rolesFrom = 'web';
   link.rolesAt = new Date();
   return true;
 }
@@ -64,7 +64,6 @@ function refreshRoles(link, ctx) {
 /** The member's link after checking their Verified role and nickname: { link, created, unlinked, why }. */
 async function linkFor(rc, member, ctx) {
   const existing = await RobloxLink.findOne({ discordId: member.id });
-  if (existing?.source === 'game') return { link: existing }; // (a game link always wins)
   const drop = async (why) => {
     if (existing) await existing.deleteOne();
     return { link: null, unlinked: existing ?? null, why };
@@ -87,7 +86,7 @@ async function linkFor(rc, member, ctx) {
     Object.assign(existing, user);
     return { link: existing };
   }
-  const link = new RobloxLink({ discordId: member.id, ...user, source: 'nickname', rolesFrom: 'web', roles: [] });
+  const link = new RobloxLink({ discordId: member.id, ...user, roles: [] });
   return { link, created: true };
 }
 
@@ -138,15 +137,4 @@ export async function updateGuild(guild, rc, { fresh = false, onProgress } = {})
     if (summary.checked % 10 === 0) await onProgress?.(summary.checked, members.length);
   }
   return summary;
-}
-
-/** Every 30 minutes: updates every server with Roblox linking on (promotions, demotions, new verifications). */
-export async function recheckAll(client) {
-  const configs = await GuildConfig.find({ 'roblox.enabled': true });
-  for (const gc of configs) {
-    const guild = client.guilds.cache.get(gc.guildId);
-    if (!guild) continue;
-    const s = await updateGuild(guild, gc.roblox);
-    console.log(`[roblox] ${guild.name}: checked ${s.checked}, ${s.linked} linked, ${s.changed} changed, ${s.unlinked} unlinked`);
-  }
 }

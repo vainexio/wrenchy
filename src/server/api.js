@@ -7,7 +7,7 @@ import { getGuildConfig } from '../models/GuildConfig.js';
 import { VerificationLog } from '../models/Verification.js';
 import { listAnnouncements, sendAnnouncement } from './announcements.js';
 import { HttpError } from './errors.js';
-import { applyRoblox, robloxOverview, syncGuild, unlink } from './robloxAdmin.js';
+import { applyRoblox, robloxOverview, syncGuild } from './robloxAdmin.js';
 import { matchMember, saveTeam, startScan, teamOverview } from './teamAdmin.js';
 
 const PANEL_CHANNEL_TYPES = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
@@ -74,7 +74,6 @@ async function describeGuild(guild, guildConfig) {
     panelUrls: {
       verification: panelUrl(guild, guildConfig.verification),
       reactionRoles: panelUrl(guild, guildConfig.reactionRoles),
-      roblox: panelUrl(guild, guildConfig.roblox),
     },
     verification: guildConfig.verification.toObject(),
     reactionRoles: guildConfig.reactionRoles.toObject(),
@@ -169,7 +168,6 @@ const APPLY = { verification: applyVerification, reactionRoles: applyReactionRol
 const PANEL_REQUIREMENTS = {
   verification: (s) => (s.roleId ? null : 'Choose a verified role and save first.'),
   reactionRoles: (s) => (s.buttons.length ? null : 'Add at least one role button and save first.'),
-  roblox: () => null,
 };
 
 function getKind(req) {
@@ -204,7 +202,7 @@ export function createApiRouter(client, auth) {
     res.json(await sendAnnouncement(guild, req.user, req.body ?? {}));
   });
 
-  // Roblox linking: live data, resync, unlink
+  // Roblox Link: live data, update everyone
   router.get('/guilds/:guildId/roblox', async (req, res) => {
     const guild = getGuild(client, req.params.guildId);
     res.json(await robloxOverview(client, guild));
@@ -239,12 +237,6 @@ export function createApiRouter(client, auth) {
     res.json(startScan(guild));
   });
 
-  router.delete('/guilds/:guildId/roblox/links/:discordId', async (req, res) => {
-    const guild = getGuild(client, req.params.guildId);
-    await unlink(client, req.params.discordId);
-    res.json(await robloxOverview(client, guild));
-  });
-
   // Saves a panel's settings and updates the posted panel in place.
   router.put('/guilds/:guildId/:kind', async (req, res) => {
     const kind = getKind(req);
@@ -269,6 +261,7 @@ export function createApiRouter(client, auth) {
   // Posts (or re-posts) a panel in a channel.
   router.post('/guilds/:guildId/:kind/panel', async (req, res) => {
     const kind = getKind(req);
+    if (!PANEL_REQUIREMENTS[kind]) throw new HttpError(404, 'That page has no panel.');
     const guild = getGuild(client, req.params.guildId);
     const guildConfig = await getGuildConfig(guild.id);
     const notReady = PANEL_REQUIREMENTS[kind](guildConfig[kind]);
