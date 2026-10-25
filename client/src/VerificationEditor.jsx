@@ -1,13 +1,6 @@
-import {
-  DiscordPreview,
-  EnabledSwitch,
-  Loading,
-  Notice,
-  PanelChannelCard,
-  RoleChips,
-  RoleOptions,
-  SaveBar,
-} from './PanelParts.jsx';
+import { useBot } from './appContext.js';
+import { DiscordPreview, PanelChannelCard, RoleChips, RoleOptions } from './PanelParts.jsx';
+import { Badge, Card, Field, PageHead, PageSkeleton, SaveBar, Toggle } from './ui.jsx';
 import { useGuildEditor } from './useGuildEditor.js';
 
 const CREATE_ROLE = '__create__';
@@ -24,100 +17,84 @@ function toForm(guild) {
 }
 
 export default function VerificationEditor({ guildId, onError }) {
+  const bot = useBot();
   const editor = useGuildEditor({ guildId, kind: 'verification', toForm, onError });
-  const { guild, form, setForm, saved, dirty, busy, notice, panelUrl } = editor;
-  if (!guild || !form) return <Loading />;
+  const { guild, form, setForm, dirty, busy, nudge } = editor;
+  if (!guild || !form) return <PageSkeleton />;
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+  const blocked = !form.content.trim() ? 'The message can’t be empty' : !form.buttonLabel.trim() ? 'The button needs a label' : null;
 
   return (
-    <form className="editor" onSubmit={(e) => editor.onSave(form, e)}>
-      <section className="card">
-        <div className="card-head">
-          <h2>Verification</h2>
-          <EnabledSwitch checked={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
-        </div>
-        <p className="muted">
-          {guild.verifiedCount} member{guild.verifiedCount === 1 ? '' : 's'} verified
-          {panelUrl && (
-            <>
-              {' · '}
-              <a href={panelUrl} target="_blank" rel="noreferrer">
-                View panel in Discord
-              </a>
-            </>
-          )}
-        </p>
+    <>
+      <PageHead
+        title="Verification"
+        description="New members press a button to verify and get the main role, which unlocks the rest of the server."
+      >
+        <Badge>{guild.verifiedCount.toLocaleString()} verified</Badge>
+        <Toggle
+          checked={form.enabled}
+          onChange={(enabled) => setForm({ ...form, enabled })}
+          label={form.enabled ? 'On' : 'Off'}
+        />
+      </PageHead>
 
-        <label className="field">
-          <span>Main role</span>
-          <select value={form.roleId} onChange={set('roleId')}>
-            {!guild.defaultRoleExists && (
-              <option value={CREATE_ROLE}>+ Create “{guild.defaultRoleName}” role</option>
-            )}
-            <RoleOptions roles={guild.roles} />
-          </select>
-          {form.roleId === CREATE_ROLE && <small className="muted">The role will be created when you save.</small>}
-        </label>
+      <div className="stack">
+        <Card title="Roles" description="What someone gets when they press the button.">
+          <Field
+            label="Main role"
+            hint={form.roleId === CREATE_ROLE ? 'The role is created when you save.' : 'Having this role means they’re verified.'}
+          >
+            <select value={form.roleId} onChange={set('roleId')}>
+              {!guild.defaultRoleExists && <option value={CREATE_ROLE}>+ Create “{guild.defaultRoleName}” role</option>}
+              <RoleOptions roles={guild.roles} />
+            </select>
+          </Field>
+          <Field
+            label="Extra roles"
+            hint="Given at the same time. Members can remove them later (with reaction roles) and won’t get them back by verifying again."
+          >
+            <RoleChips
+              roles={guild.roles}
+              value={form.extraRoleIds}
+              exclude={[form.roleId]}
+              onChange={(extraRoleIds) => setForm({ ...form, extraRoleIds })}
+            />
+          </Field>
+        </Card>
 
-        <div className="field">
-          <span>Extra roles</span>
-          <RoleChips
-            roles={guild.roles}
-            value={form.extraRoleIds}
-            exclude={[form.roleId]}
-            onChange={(extraRoleIds) => setForm({ ...form, extraRoleIds })}
-          />
-          <small className="muted">
-            Also given when someone verifies. Members can remove them later (e.g. with reaction roles) and won’t get
-            them back by verifying again.
-          </small>
-        </div>
-
-        <div className="split">
-          <div className="fields">
-            <label className="field">
-              <span>Message</span>
-              <textarea rows={6} value={form.content} maxLength={2000} onChange={set('content')} required />
-              <small className="muted">Supports Discord formatting like **bold**, *italic*, and # headings.</small>
-            </label>
-            <div className="row">
-              <label className="field grow">
-                <span>Button label</span>
-                <input value={form.buttonLabel} maxLength={80} onChange={set('buttonLabel')} required />
-              </label>
-              <label className="field small">
-                <span>Emoji</span>
-                <input value={form.buttonEmoji} maxLength={64} onChange={set('buttonEmoji')} placeholder="none" />
-              </label>
+        <Card title="Panel message" description="What members see in the verification channel, and the reply after they verify.">
+          <div className="split">
+            <div>
+              <Field label="Message" max={2000} value={form.content} hint="Discord formatting works: **bold**, *italic*, # headings.">
+                <textarea rows={6} value={form.content} maxLength={2000} onChange={set('content')} className={!form.content.trim() ? 'invalid' : ''} />
+              </Field>
+              <div className="row">
+                <Field label="Button label" className="grow" max={80} value={form.buttonLabel}>
+                  <input value={form.buttonLabel} maxLength={80} onChange={set('buttonLabel')} className={!form.buttonLabel.trim() ? 'invalid' : ''} />
+                </Field>
+                <Field label="Emoji" className="small">
+                  <input value={form.buttonEmoji} maxLength={64} onChange={set('buttonEmoji')} placeholder="none" />
+                </Field>
+              </div>
+              <Field label="Reply after verifying" max={2000} value={form.successMessage} hint="Only the member who verified sees it.">
+                <textarea rows={2} value={form.successMessage} maxLength={2000} onChange={set('successMessage')} />
+              </Field>
             </div>
-            <label className="field">
-              <span>Message after verifying</span>
-              <textarea
-                rows={2}
-                value={form.successMessage}
-                maxLength={2000}
-                onChange={set('successMessage')}
-                required
-              />
-            </label>
-          </div>
-          <div className="preview">
-            <span className="field-label">Preview</span>
             <DiscordPreview
+              bot={bot}
               content={form.content}
               buttons={[{ label: form.buttonLabel, emoji: form.buttonEmoji }]}
               disabled={!form.enabled}
               reply={form.successMessage}
             />
           </div>
-        </div>
+        </Card>
 
-        <SaveBar busy={busy} dirty={dirty} onDiscard={() => setForm(saved)} />
-      </section>
+        <PanelChannelCard editor={editor} onPost={() => editor.onPost(form)} />
+      </div>
 
-      <PanelChannelCard editor={editor} onPost={() => editor.onPost(form)} />
-      <Notice notice={notice} />
-    </form>
+      <SaveBar dirty={dirty} busy={busy} blocked={blocked} nudge={nudge} onSave={() => editor.onSave(form)} onDiscard={editor.discard} />
+    </>
   );
 }

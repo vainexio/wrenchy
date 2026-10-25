@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
-import { Loading, Notice, renderMarkdown } from './PanelParts.jsx';
+import { useBot } from './appContext.js';
+import { DiscordMessage, renderMarkdown } from './PanelParts.jsx';
+import { Badge, Button, Card, Empty, Field, PageHead, PageSkeleton, Segmented, Toggle, ago, useConfirm, useToast } from './ui.jsx';
 
 const EMPTY = {
   channelId: '',
@@ -35,48 +37,58 @@ function mentionLabel(mention, roles) {
   return role ? `@${role.name}` : '';
 }
 
-function AnnouncementPreview({ form, roles }) {
+const isEmpty = (form) =>
+  !form.content.trim() && !form.embed.title.trim() && !form.embed.description.trim() && !form.embed.imageUrl && form.mention === 'none';
+
+function AnnouncementPreview({ bot, form, roles }) {
   const ping = form.mention !== 'none' ? mentionLabel(form.mention, roles) : '';
   const e = form.embed;
   const embedHasContent = e.title || e.description;
   return (
-    <div className="discord">
-      {(ping || form.content) && (
-        <div className="discord-content">
-          {ping && <span className="discord-mention">{ping}</span>}
-          {ping && form.content && (form.mode === 'text' ? ' ' : <br />)}
-          {renderMarkdown(form.content)}
-        </div>
-      )}
-      {form.mode === 'embed' && (
-        <div className="discord-embed" style={{ borderColor: e.color }}>
-          <div className="discord-embed-body">
-            <div className="grow">
-              {e.title && <div className={`discord-embed-title${e.url ? ' linked' : ''}`}>{e.title}</div>}
-              {e.description && <div className="discord-embed-desc">{renderMarkdown(e.description)}</div>}
-              {!embedHasContent && <div className="muted">Add a title or description…</div>}
-            </div>
-            {e.thumbnailUrl && <img className="discord-embed-thumb" src={e.thumbnailUrl} alt="" />}
-          </div>
-          {e.imageUrl && <img className="discord-embed-image" src={e.imageUrl} alt="" />}
-          {(e.footer || e.timestamp) && (
-            <div className="discord-embed-footer">
-              {[e.footer, e.timestamp && 'Today at the time it’s sent'].filter(Boolean).join(' • ')}
+    <div>
+      <div className="preview-label">
+        <span>Preview</span>
+      </div>
+      <div className="discord">
+        <DiscordMessage bot={bot}>
+          {(ping || form.content) && (
+            <div className="discord-content">
+              {ping && <span className="discord-mention">{ping}</span>}
+              {ping && form.content && (form.mode === 'text' ? ' ' : <br />)}
+              {renderMarkdown(form.content)}
             </div>
           )}
-        </div>
-      )}
-      {form.mode === 'text' && !form.content && !ping && <div className="muted">Your message will appear here…</div>}
+          {form.mode === 'embed' && (
+            <div className="discord-embed" style={{ borderColor: e.color }}>
+              <div className="discord-embed-body">
+                <div className="grow">
+                  {e.title && <div className={`discord-embed-title${e.url ? ' linked' : ''}`}>{e.title}</div>}
+                  {e.description && <div className="discord-embed-desc">{renderMarkdown(e.description)}</div>}
+                  {!embedHasContent && <div className="placeholder">Add a title or description…</div>}
+                </div>
+                {e.thumbnailUrl && <img className="discord-embed-thumb" src={e.thumbnailUrl} alt="" />}
+              </div>
+              {e.imageUrl && <img className="discord-embed-image" src={e.imageUrl} alt="" />}
+              {(e.footer || e.timestamp) && (
+                <div className="discord-embed-footer">{[e.footer, e.timestamp && 'Today at the time it’s sent'].filter(Boolean).join(' • ')}</div>
+              )}
+            </div>
+          )}
+          {form.mode === 'text' && !form.content && !ping && <div className="discord-content placeholder">Your message will appear here…</div>}
+        </DiscordMessage>
+      </div>
     </div>
   );
 }
 
 export default function AnnouncementEditor({ guildId, onError }) {
+  const bot = useBot();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [guild, setGuild] = useState(null);
   const [history, setHistory] = useState([]);
   const [form, setForm] = useState(() => loadDraft(guildId));
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
 
   useEffect(() => {
     Promise.all([api(`/guilds/${guildId}`), api(`/guilds/${guildId}/announcements`)])
@@ -89,193 +101,180 @@ export default function AnnouncementEditor({ guildId, onError }) {
 
   useEffect(() => saveDraft(guildId, form), [guildId, form]);
 
-  if (!guild) return <Loading />;
+  if (!guild) return <PageSkeleton />;
 
   const set = (key) => (ev) => setForm({ ...form, [key]: ev.target.value });
   const setEmbed = (key) => (ev) =>
     setForm({ ...form, embed: { ...form.embed, [key]: ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value } });
 
   const channel = guild.channels.find((c) => c.id === form.channelId);
-  const canSend =
-    channel && (form.mode === 'text' ? form.content.trim() : form.embed.title.trim() || form.embed.description.trim());
+  const hasBody = form.mode === 'text' ? form.content.trim() : form.embed.title.trim() || form.embed.description.trim();
+  const why = !channel ? 'Pick a channel first' : !hasBody ? (form.mode === 'text' ? 'Write a message first' : 'Give the embed a title or description') : null;
+  const ping = form.mention !== 'none' ? mentionLabel(form.mention, guild.roles) : '';
 
   async function send(ev) {
-    ev.preventDefault();
-    const ping = form.mention !== 'none' ? ` and ping ${mentionLabel(form.mention, guild.roles)}` : '';
-    if (!window.confirm(`Send this ${form.mode === 'embed' ? 'embed' : 'message'} to #${channel.name}${ping}?`)) return;
-
+    ev?.preventDefault();
+    if (why) return;
+    const ok = await confirm({
+      title: `Send to #${channel.name}?`,
+      text: `${form.mode === 'embed' ? 'The embed' : 'The message'} goes out right away${ping ? ` and pings ${ping}` : ''}. It can’t be unsent from here.`,
+      confirmLabel: ping ? `Send and ping ${ping}` : 'Send now',
+      danger: ping === '@everyone' || ping === '@here',
+    });
+    if (!ok) return;
     setBusy(true);
-    setNotice(null);
     try {
       const result = await api(`/guilds/${guildId}/announcements`, { method: 'POST', body: form });
       setHistory(result.history);
-      setNotice({ type: 'ok', text: 'Sent!', url: result.url });
+      toast({ title: `Sent to #${channel.name}`, link: result.url ? { href: result.url, label: 'View in Discord' } : undefined });
       setForm({ ...EMPTY, channelId: form.channelId, mode: form.mode, embed: { ...EMPTY.embed, color: form.embed.color } });
     } catch (err) {
       onError(err);
-      setNotice({ type: 'error', text: err.message });
+      toast({ tone: 'error', title: 'Not sent', text: err.message });
     } finally {
       setBusy(false);
     }
   }
 
+  async function clear() {
+    if (!isEmpty(form) && !(await confirm({ title: 'Clear this draft?', text: 'The text, embed and ping are wiped. The channel stays picked.', confirmLabel: 'Clear draft', danger: true }))) return;
+    setForm({ ...EMPTY, channelId: form.channelId });
+  }
+
   return (
-    <form className="editor" onSubmit={send}>
-      <section className="card">
-        <div className="card-head">
-          <h2>Announcement</h2>
-          <div className="segmented" role="radiogroup" aria-label="Message type">
-            {[
-              ['text', 'Normal message'],
-              ['embed', 'Embed'],
-            ].map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                role="radio"
-                aria-checked={form.mode === mode}
-                className={form.mode === mode ? 'active' : ''}
-                onClick={() => setForm({ ...form, mode })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+    <>
+      <PageHead title="Announcements" description="Send a message or an embed from Wrenchy to any channel. Your draft is kept in this browser until you send it.">
+        <Segmented
+          label="Message type"
+          value={form.mode}
+          onChange={(mode) => setForm({ ...form, mode })}
+          options={[
+            { value: 'text', label: 'Message' },
+            { value: 'embed', label: 'Embed' },
+          ]}
+        />
+      </PageHead>
 
-        <div className="row">
-          <label className="field grow">
-            <span>Channel</span>
-            <select value={form.channelId} onChange={set('channelId')} required>
-              <option value="">Select a channel…</option>
-              {guild.channels.map((c) => (
-                <option key={c.id} value={c.id} disabled={!c.canPost}>
-                  #{c.name}
-                  {c.category ? ` (${c.category})` : ''}
-                  {c.canPost ? '' : ' (no permission)'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field grow">
-            <span>Ping</span>
-            <select value={form.mention} onChange={set('mention')}>
-              <option value="none">No ping</option>
-              <option value="everyone">@everyone</option>
-              <option value="here">@here</option>
-              {guild.roles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  @{r.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="split">
-          <div className="fields">
-            <label className="field">
-              <span>{form.mode === 'embed' ? 'Text above the embed (optional)' : 'Message'}</span>
-              <textarea
-                rows={form.mode === 'embed' ? 2 : 8}
-                value={form.content}
-                maxLength={2000}
-                onChange={set('content')}
-                required={form.mode === 'text'}
-              />
-              <small className="muted">Supports Discord formatting like **bold**, *italic*, # headings and links.</small>
-            </label>
-
-            {form.mode === 'embed' && (
-              <>
-                <div className="row">
-                  <label className="field grow">
-                    <span>Title</span>
-                    <input value={form.embed.title} maxLength={256} onChange={setEmbed('title')} />
-                  </label>
-                  <label className="field small">
-                    <span>Color</span>
-                    <input type="color" value={form.embed.color} onChange={setEmbed('color')} />
-                  </label>
-                </div>
-                <label className="field">
-                  <span>Description</span>
-                  <textarea rows={6} value={form.embed.description} maxLength={4096} onChange={setEmbed('description')} />
-                </label>
-                <label className="field">
-                  <span>Title link (optional)</span>
-                  <input type="url" value={form.embed.url} onChange={setEmbed('url')} placeholder="https://" />
-                </label>
-                <div className="row">
-                  <label className="field grow">
-                    <span>Image (optional)</span>
-                    <input type="url" value={form.embed.imageUrl} onChange={setEmbed('imageUrl')} placeholder="https://" />
-                  </label>
-                  <label className="field grow">
-                    <span>Thumbnail (optional)</span>
-                    <input
-                      type="url"
-                      value={form.embed.thumbnailUrl}
-                      onChange={setEmbed('thumbnailUrl')}
-                      placeholder="https://"
-                    />
-                  </label>
-                </div>
-                <label className="field">
-                  <span>Footer (optional)</span>
-                  <input value={form.embed.footer} maxLength={2048} onChange={setEmbed('footer')} />
-                </label>
-                <label className="switch field-inline">
-                  <input type="checkbox" checked={form.embed.timestamp} onChange={setEmbed('timestamp')} />
-                  <span>Show time sent</span>
-                </label>
-              </>
-            )}
-          </div>
-          <div className="preview">
-            <span className="field-label">Preview</span>
-            <AnnouncementPreview form={form} roles={guild.roles} />
-          </div>
-        </div>
-
-        <div className="actions">
-          <button type="submit" className="primary" disabled={busy || !canSend}>
-            {busy ? 'Sending…' : channel ? `Send to #${channel.name}` : 'Send'}
-          </button>
-          <button type="button" disabled={busy} onClick={() => setForm({ ...EMPTY, channelId: form.channelId })}>
-            Clear
-          </button>
-        </div>
-      </section>
-
-      {notice && (
-        <div className={`notice ${notice.type}`}>
-          {notice.text}{' '}
-          {notice.url && (
-            <a href={notice.url} target="_blank" rel="noreferrer">
-              View in Discord
-            </a>
-          )}
-        </div>
-      )}
-
-      <section className="card">
-        <h2>Recent announcements</h2>
-        {history.length === 0 && <p className="muted">Nothing sent yet.</p>}
-        <ul className="history">
-          {history.map((a) => (
-            <li key={a.id}>
-              <a href={a.url} target="_blank" rel="noreferrer" className="grow">
-                {a.summary || '(no text)'}
-              </a>
-              <span className="muted">
-                #{a.channelName} · {a.mode === 'embed' ? 'Embed' : 'Message'} · {a.sentBy} ·{' '}
-                {new Date(a.sentAt).toLocaleString()}
+      <form className="stack" onSubmit={send}>
+        <Card
+          title="Compose"
+          footer={
+            <>
+              <span className="grow subtle" style={{ alignSelf: 'center' }}>
+                {why ?? `Goes to #${channel.name}${ping ? ` · pings ${ping}` : ''}`}
               </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-    </form>
+              <Button variant="ghost" disabled={busy} onClick={clear}>
+                Clear
+              </Button>
+              <Button type="submit" variant="primary" icon="send" loading={busy} disabled={Boolean(why)}>
+                {channel ? `Send to #${channel.name}` : 'Send'}
+              </Button>
+            </>
+          }
+        >
+          <div className="fields-row">
+            <Field label="Channel">
+              <select value={form.channelId} onChange={set('channelId')}>
+                <option value="">Pick a channel…</option>
+                {guild.channels.map((c) => (
+                  <option key={c.id} value={c.id} disabled={!c.canPost}>
+                    #{c.name}
+                    {c.category ? ` · ${c.category}` : ''}
+                    {c.canPost ? '' : ' (Wrenchy can’t post here)'}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Ping" hint={form.mention === 'everyone' || form.mention === 'here' ? 'Pings everyone who can see the channel.' : undefined}>
+              <select value={form.mention} onChange={set('mention')}>
+                <option value="none">No ping</option>
+                <option value="everyone">@everyone</option>
+                <option value="here">@here</option>
+                {guild.roles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    @{r.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <div className="divider" />
+
+          <div className="split">
+            <div>
+              <Field
+                label={form.mode === 'embed' ? 'Text above the embed (optional)' : 'Message'}
+                max={2000}
+                value={form.content}
+                hint="Discord formatting works: **bold**, *italic*, # headings and links."
+              >
+                <textarea rows={form.mode === 'embed' ? 2 : 8} value={form.content} maxLength={2000} onChange={set('content')} />
+              </Field>
+
+              {form.mode === 'embed' && (
+                <>
+                  <div className="row">
+                    <Field label="Title" className="grow" max={256} value={form.embed.title}>
+                      <input value={form.embed.title} maxLength={256} onChange={setEmbed('title')} />
+                    </Field>
+                    <Field label="Colour" className="small">
+                      <input type="color" value={form.embed.color} onChange={setEmbed('color')} />
+                    </Field>
+                  </div>
+                  <Field label="Description" max={4096} value={form.embed.description}>
+                    <textarea rows={6} value={form.embed.description} maxLength={4096} onChange={setEmbed('description')} />
+                  </Field>
+                  <Field label="Title link (optional)">
+                    <input type="url" value={form.embed.url} onChange={setEmbed('url')} placeholder="https://" />
+                  </Field>
+                  <div className="fields-row">
+                    <Field label="Image (optional)">
+                      <input type="url" value={form.embed.imageUrl} onChange={setEmbed('imageUrl')} placeholder="https://" />
+                    </Field>
+                    <Field label="Thumbnail (optional)">
+                      <input type="url" value={form.embed.thumbnailUrl} onChange={setEmbed('thumbnailUrl')} placeholder="https://" />
+                    </Field>
+                  </div>
+                  <Field label="Footer (optional)" max={2048} value={form.embed.footer}>
+                    <input value={form.embed.footer} maxLength={2048} onChange={setEmbed('footer')} />
+                  </Field>
+                  <div className="field">
+                    <Toggle checked={form.embed.timestamp} onChange={(timestamp) => setForm({ ...form, embed: { ...form.embed, timestamp } })} label="Show the time it was sent" />
+                  </div>
+                </>
+              )}
+            </div>
+            <AnnouncementPreview bot={bot} form={form} roles={guild.roles} />
+          </div>
+        </Card>
+
+        <Card title="Recent announcements" bodyClass="" aside={<Badge>{history.length}</Badge>}>
+          {history.length === 0 ? (
+            <Empty icon="megaphone" title="Nothing sent yet">
+              Announcements you send show up here.
+            </Empty>
+          ) : (
+            <ul className="list">
+              {history.map((a) => (
+                <li key={a.id}>
+                  <div className="grow">
+                    <a href={a.url} target="_blank" rel="noreferrer" className="history-text" title="Open in Discord">
+                      {a.summary || '(no text)'}
+                    </a>
+                    <div className="history-meta">
+                      <span className="pill">#{a.channelName}</span>
+                      <span className="pill">{a.mode === 'embed' ? 'Embed' : 'Message'}</span>
+                      <span>by {a.sentBy}</span>
+                      <span title={new Date(a.sentAt).toLocaleString()}>· {ago(a.sentAt)}</span>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </form>
+    </>
   );
 }

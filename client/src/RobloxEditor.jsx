@@ -1,15 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
-import {
-  DiscordPreview,
-  EnabledSwitch,
-  Loading,
-  Notice,
-  PanelChannelCard,
-  RoleChips,
-  RoleOptions,
-  SaveBar,
-} from './PanelParts.jsx';
+import { useBot } from './appContext.js';
+import { DiscordPreview, PanelChannelCard, RoleChips, RoleOptions } from './PanelParts.jsx';
+import { Badge, Button, Card, Empty, Field, PageHead, PageSkeleton, SaveBar, Toggle, ago, useConfirm, useToast } from './ui.jsx';
 import { useGuildEditor } from './useGuildEditor.js';
 
 function toForm(guild) {
@@ -27,30 +20,25 @@ function toForm(guild) {
   };
 }
 
-function ago(date) {
-  if (!date) return 'never';
-  const s = Math.round((Date.now() - new Date(date).getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
-
 function GameStatus({ game }) {
   if (!game) return null;
-  if (!game.keySet) return <span className="status bad">Bot has no GAME_API_KEY</span>;
-  if (!game.lastSeenAt) return <span className="status idle">Game hasn’t connected yet</span>;
-  return <span className="status ok">Game connected {ago(game.lastSeenAt)}</span>;
+  if (!game.keySet) return <Badge tone="bad" dot>Bot has no GAME_API_KEY</Badge>;
+  if (!game.lastSeenAt) return <Badge dot>Game hasn’t connected yet</Badge>;
+  return (
+    <Badge tone="ok" dot title={new Date(game.lastSeenAt).toLocaleString()}>
+      Game connected {ago(game.lastSeenAt)}
+    </Badge>
+  );
 }
 
 function RobloxRoleSelect({ value, roles, taken, onChange }) {
-  const visible = roles.filter((r) => r.rank > 1); // (everyone holds Talyerista: not useful to bind)
+  const visible = roles.filter((r) => r.rank > 1); // (everyone holds the member role: not useful to bind)
   const groups = [
     ['Group roles', visible.filter((r) => !r.hidden)],
     ['Private roles', visible.filter((r) => r.hidden)],
   ];
   return (
-    <select value={value || ''} onChange={(e) => onChange(Number(e.target.value))} aria-label="Roblox role">
+    <select value={value || ''} onChange={(e) => onChange(Number(e.target.value))} aria-label="Roblox role" className={!value ? 'invalid' : ''}>
       <option value="">Pick a Roblox role…</option>
       {groups.map(([label, list]) =>
         list.length ? (
@@ -67,77 +55,85 @@ function RobloxRoleSelect({ value, roles, taken, onChange }) {
   );
 }
 
-function LinkedStaff({ overview, busy, onSync, onUnlink }) {
+function LinkedStaff({ overview, syncing, unlinking, onSync, onUnlink }) {
   const { links } = overview;
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Linked staff ({links.length})</h2>
-        <button type="button" disabled={busy || !links.length} onClick={onSync}>
+    <Card
+      title="Linked staff"
+      description="Everyone who linked their Roblox account, with the group roles their Discord roles follow."
+      bodyClass=""
+      aside={
+        <Button icon="refresh" loading={syncing} disabled={!links.length} onClick={onSync}>
           Sync everyone
-        </button>
-      </div>
-      {!links.length && <p className="muted">Nobody has linked yet.</p>}
-      <ul className="links">
-        {links.map((l) => (
-          <li key={l.discordId}>
-            <div className="link-who">
-              {l.discordAvatar ? <img src={l.discordAvatar} alt="" /> : <span className="guild-icon">?</span>}
-              <div className="grow">
-                <div className="link-names">
-                  <strong>{l.discordName}</strong>
-                  <span className="muted">→</span>
-                  <a href={`https://www.roblox.com/users/${l.robloxId}/profile`} target="_blank" rel="noreferrer">
-                    @{l.username}
-                  </a>
-                  {!l.inServer && <span className="status idle">Not in this server</span>}
-                </div>
-                <div className="link-roles">
-                  {l.roles.length ? (
-                    l.roles.map((r) => (
-                      <span key={r.id} className="role-pill">
-                        {r.name}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="muted">No group roles</span>
-                  )}
+        </Button>
+      }
+    >
+      {!links.length ? (
+        <Empty icon="link" title="Nobody has linked yet">
+          Staff press the panel’s button in Discord to start.
+        </Empty>
+      ) : (
+        <ul className="list">
+          {links.map((l) => (
+            <li key={l.discordId}>
+              <div className="who">
+                {l.discordAvatar ? <img className="avatar-sm" src={l.discordAvatar} alt="" /> : <span className="avatar-sm">?</span>}
+                <div className="grow">
+                  <div className="who-names">
+                    <strong>{l.discordName}</strong>
+                    <a href={`https://www.roblox.com/users/${l.robloxId}/profile`} target="_blank" rel="noreferrer">
+                      @{l.username}
+                    </a>
+                    {!l.inServer && <Badge tone="warn">Not in this server</Badge>}
+                  </div>
+                  <div className="who-sub">
+                    {l.roles.length ? l.roles.map((r) => <span key={r.id} className="pill">{r.name}</span>) : <span className="subtle">No group roles</span>}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="link-meta">
-              <span className="muted" title={`Roles from the ${l.rolesFrom === 'game' ? 'game' : 'Roblox website'}`}>
-                Synced {ago(l.syncedAt)}
+              <span className="subtle" title={`Roles from the ${l.rolesFrom === 'game' ? 'game' : 'Roblox website'}`}>
+                Synced {ago(l.syncedAt) ?? 'never'}
               </span>
-              <button type="button" className="danger-text" disabled={busy} onClick={() => onUnlink(l)}>
+              <Button size="sm" variant="ghost-danger" icon="x" loading={unlinking === l.discordId} onClick={() => onUnlink(l)}>
                 Unlink
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
 export default function RobloxEditor({ guildId, onError }) {
+  const bot = useBot();
+  const toast = useToast();
+  const confirm = useConfirm();
   const editor = useGuildEditor({ guildId, kind: 'roblox', toForm, onError });
-  const { guild, form, setForm, saved, dirty, busy, notice, panelUrl } = editor;
+  const { guild, form, setForm, dirty, busy, nudge } = editor;
   const [overview, setOverview] = useState(null);
-  const [listBusy, setListBusy] = useState(false);
-  const [listNotice, setListNotice] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [unlinking, setUnlinking] = useState(null);
 
   useEffect(() => {
     api(`/guilds/${guildId}/roblox`).then(setOverview).catch(onError);
   }, [guildId]);
 
-  if (!guild || !form) return <Loading />;
+  if (!guild || !form) return <PageSkeleton />;
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
   const setBinding = (i, changes) =>
     setForm({ ...form, bindings: form.bindings.map((b, j) => (j === i ? { ...b, ...changes } : b)) });
   const taken = new Set(form.bindings.map((b) => b.robloxRoleId));
   const incomplete = form.bindings.some((b) => !b.robloxRoleId || !b.discordRoleIds.length);
+  const badNick = form.nicknameEnabled && !form.nicknameFormat.includes('{username}') && !form.nicknameFormat.includes('{display}');
+  const blocked = incomplete
+    ? 'Each binding needs a Roblox role and a Discord role'
+    : badNick
+      ? 'The nickname needs {username} or {display}'
+      : !form.content.trim()
+        ? 'The message can’t be empty'
+        : null;
 
   const sample = overview?.links[0] ?? { username: 'juan123', displayName: 'Juan' };
   const nickPreview = form.nicknameFormat
@@ -145,110 +141,70 @@ export default function RobloxEditor({ guildId, onError }) {
     .replaceAll('{display}', sample.displayName || sample.username)
     .slice(0, 32);
 
-  async function runList(action, okText) {
-    setListBusy(true);
-    setListNotice(null);
+  async function syncAll() {
+    setSyncing(true);
     try {
-      const data = await action();
-      setOverview(data);
-      setListNotice({ type: 'ok', text: typeof okText === 'function' ? okText(data) : okText });
+      const d = await api(`/guilds/${guildId}/roblox/sync`, { method: 'POST' });
+      setOverview(d);
+      toast({ title: `Synced ${d.linked} linked member${d.linked === 1 ? '' : 's'}`, text: `${d.changed} had roles changed.` });
     } catch (err) {
       onError(err);
-      setListNotice({ type: 'error', text: err.message });
+      toast({ tone: 'error', title: 'Sync failed', text: err.message });
     } finally {
-      setListBusy(false);
+      setSyncing(false);
     }
   }
 
-  const syncAll = () =>
-    runList(
-      () => api(`/guilds/${guildId}/roblox/sync`, { method: 'POST' }),
-      (d) => `Synced ${d.linked} linked member${d.linked === 1 ? '' : 's'} (${d.changed} changed).`,
-    );
-  const unlinkOne = (l) => {
-    if (!window.confirm(`Unlink ${l.discordName} from @${l.username}? Their synced roles will be removed.`)) return;
-    runList(() => api(`/guilds/${guildId}/roblox/links/${l.discordId}`, { method: 'DELETE' }), 'Unlinked.');
-  };
+  async function unlinkOne(l) {
+    const ok = await confirm({
+      title: `Unlink ${l.discordName}?`,
+      text: `They’re unlinked from @${l.username} and lose the Discord roles that came from their rank. They can link again any time.`,
+      confirmLabel: 'Unlink',
+      danger: true,
+    });
+    if (!ok) return;
+    setUnlinking(l.discordId);
+    try {
+      setOverview(await api(`/guilds/${guildId}/roblox/links/${l.discordId}`, { method: 'DELETE' }));
+      toast({ title: `Unlinked ${l.discordName}` });
+    } catch (err) {
+      onError(err);
+      toast({ tone: 'error', title: 'Couldn’t unlink', text: err.message });
+    } finally {
+      setUnlinking(null);
+    }
+  }
 
   return (
     <>
-      <form className="editor" onSubmit={(e) => editor.onSave(form, e)}>
-        <section className="card">
-          <div className="card-head">
-            <h2>Roblox Link</h2>
-            <EnabledSwitch checked={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
-          </div>
-          <p className="muted">
-            Staff press the button in Discord to get a code, then type <code>/link CODE</code> in Talyer. Only staff
-            ranks can link (set in the game’s <code>Config.Admin.DiscordLink</code>).{' '}
-            {panelUrl && (
-              <>
-                <a href={panelUrl} target="_blank" rel="noreferrer">
-                  View panel in Discord
-                </a>{' '}
-              </>
-            )}
-            <GameStatus game={overview?.game} />
-          </p>
+      <PageHead
+        title="Roblox Link"
+        description="Staff link their Discord to their Roblox account, and their Discord roles follow their rank in the group."
+      >
+        <GameStatus game={overview?.game} />
+        <Toggle checked={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} label={form.enabled ? 'On' : 'Off'} />
+      </PageHead>
 
-          <div className="split">
-            <div className="fields">
-              <label className="field">
-                <span>Message</span>
-                <textarea rows={4} value={form.content} maxLength={2000} onChange={set('content')} required />
-              </label>
-              <div className="row">
-                <label className="field grow">
-                  <span>Button label</span>
-                  <input value={form.buttonLabel} maxLength={80} onChange={set('buttonLabel')} required />
-                </label>
-                <label className="field small">
-                  <span>Emoji</span>
-                  <input value={form.buttonEmoji} maxLength={64} onChange={set('buttonEmoji')} placeholder="none" />
-                </label>
-              </div>
-              <label className="field">
-                <span>Game link (optional)</span>
-                <input
-                  type="url"
-                  value={form.gameUrl}
-                  onChange={set('gameUrl')}
-                  placeholder="https://www.roblox.com/games/…"
-                />
-                <small className="muted">Adds an “Open Talyer” button next to the code.</small>
-              </label>
-            </div>
-            <div className="preview">
-              <span className="field-label">Preview</span>
-              <DiscordPreview
-                content={form.content}
-                buttons={[{ label: form.buttonLabel, emoji: form.buttonEmoji }]}
-                disabled={!form.enabled}
-                reply={'Your link code is **K7F2QX**\nJoin Talyer on Roblox and type /link K7F2QX in chat.'}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className="card">
-          <h2>Role sync</h2>
-          <p className="muted">
-            Matched by Roblox role ID, so reordering ranks in the group never breaks a binding. Roles update when staff
-            join the game and every 30 minutes.
-          </p>
-
-          <div className="field">
-            <span>Roblox role → Discord roles</span>
-            <div className="bindings">
+      <div className="stack">
+        <Card
+          title="Role sync"
+          description="Matched by Roblox role ID, so reordering ranks never breaks a binding. Roles update when staff join the game and every 30 minutes."
+          footer={
+            <Button icon="plus" onClick={() => setForm({ ...form, bindings: [...form.bindings, { robloxRoleId: 0, discordRoleIds: [] }] })}>
+              Add binding
+            </Button>
+          }
+        >
+          {form.bindings.length === 0 ? (
+            <Empty icon="link" title="No bindings yet">
+              Add one to give a Discord role to everyone holding a Roblox role.
+            </Empty>
+          ) : (
+            <div className="rows">
               {form.bindings.map((b, i) => (
                 <div className="binding" key={i}>
                   {overview ? (
-                    <RobloxRoleSelect
-                      value={b.robloxRoleId}
-                      roles={overview.groupRoles}
-                      taken={taken}
-                      onChange={(robloxRoleId) => setBinding(i, { robloxRoleId })}
-                    />
+                    <RobloxRoleSelect value={b.robloxRoleId} roles={overview.groupRoles} taken={taken} onChange={(robloxRoleId) => setBinding(i, { robloxRoleId })} />
                   ) : (
                     <select disabled>
                       <option>Loading roles…</option>
@@ -257,78 +213,86 @@ export default function RobloxEditor({ guildId, onError }) {
                   <span className="binding-arrow" aria-hidden="true">
                     →
                   </span>
-                  <RoleChips
-                    roles={guild.roles}
-                    value={b.discordRoleIds}
-                    onChange={(discordRoleIds) => setBinding(i, { discordRoleIds })}
-                  />
-                  <button
-                    type="button"
+                  <RoleChips roles={guild.roles} value={b.discordRoleIds} onChange={(discordRoleIds) => setBinding(i, { discordRoleIds })} addLabel="Add Discord role…" />
+                  <Button
+                    size="sm"
+                    variant="ghost-danger"
+                    icon="trash"
                     title="Remove binding"
                     onClick={() => setForm({ ...form, bindings: form.bindings.filter((_, j) => j !== i) })}
-                  >
-                    ✕
-                  </button>
+                  />
                 </div>
               ))}
             </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, bindings: [...form.bindings, { robloxRoleId: 0, discordRoleIds: [] }] })}
-              >
-                + Add binding
-              </button>
-            </div>
-            {incomplete && <small className="muted">Each binding needs a Roblox role and at least one Discord role.</small>}
-          </div>
+          )}
+        </Card>
 
-          <div className="row">
-            <label className="field grow">
-              <span>Role for everyone linked (optional)</span>
+        <Card title="Nickname and linked role" description="What every linked member gets, whatever their rank.">
+          <div className="fields-row">
+            <Field label="Role for everyone linked (optional)">
               <select value={form.linkedRoleId} onChange={set('linkedRoleId')}>
                 <option value="">None</option>
                 <RoleOptions roles={guild.roles} />
               </select>
-            </label>
-          </div>
-
-          <div className="field">
-            <label className="switch">
-              <input
-                type="checkbox"
+            </Field>
+            <div className="field">
+              <Toggle
                 checked={form.nicknameEnabled}
-                onChange={(e) => setForm({ ...form, nicknameEnabled: e.target.checked })}
+                onChange={(nicknameEnabled) => setForm({ ...form, nicknameEnabled })}
+                label="Set nickname from Roblox"
+                description="Their Discord nickname follows their Roblox name."
               />
-              <span>Set nickname from Roblox</span>
-            </label>
-            {form.nicknameEnabled && (
-              <div className="row">
-                <label className="field grow">
-                  <span>Format</span>
-                  <input value={form.nicknameFormat} maxLength={100} onChange={set('nicknameFormat')} required />
-                  <small className="muted">
-                    <code>{'{display}'}</code> display name, <code>{'{username}'}</code> username. Shows as{' '}
-                    <strong>{nickPreview}</strong>
-                  </small>
-                </label>
-              </div>
-            )}
+            </div>
           </div>
+          {form.nicknameEnabled && (
+            <Field
+              label="Nickname format"
+              error={badNick ? 'Put {username} or {display} in it.' : undefined}
+              hint={
+                <>
+                  <code>{'{display}'}</code> display name, <code>{'{username}'}</code> username. Shows as <strong>{nickPreview}</strong>
+                </>
+              }
+            >
+              <input value={form.nicknameFormat} maxLength={100} onChange={set('nicknameFormat')} className={badNick ? 'invalid' : ''} />
+            </Field>
+          )}
+        </Card>
 
-          <SaveBar busy={busy} dirty={dirty} canSave={!incomplete} onDiscard={() => setForm(saved)} />
-        </section>
+        {overview ? <LinkedStaff overview={overview} syncing={syncing} unlinking={unlinking} onSync={syncAll} onUnlink={unlinkOne} /> : <div className="skeleton" style={{ height: 160 }} />}
+
+        <Card title="Link panel" description={<>Staff press the button to get a code, then type <code>/link CODE</code> in the game. Only staff ranks can link (the game decides).</>}>
+          <div className="split">
+            <div>
+              <Field label="Message" max={2000} value={form.content}>
+                <textarea rows={4} value={form.content} maxLength={2000} onChange={set('content')} className={!form.content.trim() ? 'invalid' : ''} />
+              </Field>
+              <div className="row">
+                <Field label="Button label" className="grow" max={80} value={form.buttonLabel}>
+                  <input value={form.buttonLabel} maxLength={80} onChange={set('buttonLabel')} />
+                </Field>
+                <Field label="Emoji" className="small">
+                  <input value={form.buttonEmoji} maxLength={64} onChange={set('buttonEmoji')} placeholder="none" />
+                </Field>
+              </div>
+              <Field label="Game link (optional)" hint="Adds an “Open game” button next to the code.">
+                <input type="url" value={form.gameUrl} onChange={set('gameUrl')} placeholder="https://www.roblox.com/games/…" />
+              </Field>
+            </div>
+            <DiscordPreview
+              bot={bot}
+              content={form.content}
+              buttons={[{ label: form.buttonLabel, emoji: form.buttonEmoji }]}
+              disabled={!form.enabled}
+              reply={'Your link code is **K7F2QX**\nJoin the game on Roblox and type /link K7F2QX in chat.'}
+            />
+          </div>
+        </Card>
 
         <PanelChannelCard editor={editor} onPost={() => editor.onPost(form)} />
-        <Notice notice={notice} />
-      </form>
+      </div>
 
-      {overview ? (
-        <LinkedStaff overview={overview} busy={listBusy} onSync={syncAll} onUnlink={unlinkOne} />
-      ) : (
-        <Loading />
-      )}
-      <Notice notice={listNotice} />
+      <SaveBar dirty={dirty} busy={busy} blocked={blocked} nudge={nudge} onSave={() => editor.onSave(form)} onDiscard={editor.discard} />
     </>
   );
 }

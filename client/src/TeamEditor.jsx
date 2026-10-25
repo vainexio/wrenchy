@@ -1,115 +1,113 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api.js';
-import { Loading, Notice, RoleChips } from './PanelParts.jsx';
+import { useReportDirty } from './appContext.js';
+import { RoleChips } from './PanelParts.jsx';
+import { Badge, Button, Card, Empty, Field, Icon, PageHead, PageSkeleton, SaveBar, Segmented, ago, day, useConfirm, useToast } from './ui.jsx';
 
-// Team: who of the testers and staff last played (the game reports it) and last chatted (Wrenchy counts messages),
-// and who's gone quiet. Groups and the inactive days are set at the bottom.
+// Team: who of the testers and staff last played (the game reports it) and last chatted (Wrenchy notes when, never
+// what), and who's gone quiet. Groups and the inactive days are set at the bottom.
 
-function ago(date) {
-  if (!date) return null;
-  const s = Math.round((Date.now() - new Date(date).getTime()) / 1000);
-  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
-
-function day(date) {
-  return date ? new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-}
-
-function hours(minutes) {
-  if (!minutes) return '0m played';
+function played(minutes) {
+  if (!minutes) return 'no time yet';
   return minutes < 60 ? `${Math.round(minutes)}m played` : `${(minutes / 60).toFixed(minutes < 600 ? 1 : 0)}h played`;
 }
 
 const FILTERS = [
-  ['inactive', 'Inactive'],
-  ['game', 'Not playing'],
-  ['discord', 'Not chatting'],
-  ['online', 'In game now'],
-  ['all', 'Everyone'],
+  { value: 'inactive', label: 'Inactive', test: (p) => p.inactiveGame || p.inactiveDiscord },
+  { value: 'game', label: 'Not playing', test: (p) => p.inactiveGame },
+  { value: 'discord', label: 'Not chatting', test: (p) => p.inactiveDiscord },
+  { value: 'online', label: 'In game now', test: (p) => p.game?.online },
+  { value: 'all', label: 'Everyone', test: () => true },
 ];
 
-function matches(p, filter, search) {
-  if (search) {
-    const s = search.toLowerCase();
-    if (![p.username, p.displayName, p.discordName].some((n) => n?.toLowerCase().includes(s))) return false;
-  }
-  if (filter === 'inactive') return p.inactiveGame || p.inactiveDiscord;
-  if (filter === 'game') return p.inactiveGame;
-  if (filter === 'discord') return p.inactiveDiscord;
-  if (filter === 'online') return p.game?.online;
-  return true;
+function searchHit(p, search) {
+  if (!search) return true;
+  const s = search.toLowerCase();
+  return [p.username, p.displayName, p.discordName].some((n) => n?.toLowerCase().includes(s));
 }
 
-function GameCell({ p, inactiveDays }) {
-  if (!p.robloxId) return <span className="muted">No Roblox account found</span>;
+function GameCell({ p }) {
+  if (!p.robloxId) return <div className="when"><span>No Roblox account found</span></div>;
   if (p.game?.online) {
     return (
-      <span className="status ok" title={p.game.game}>
-        In game now
-      </span>
+      <div className="when">
+        <b className="ok">● In game now</b>
+        <span>{played(p.game.minutes)}</span>
+      </div>
     );
   }
-  if (!p.game) return <span className={`status ${p.inactiveGame ? 'bad' : 'idle'}`}>Not seen yet</span>;
+  if (!p.game) return <div className="when"><b className="bad">Not seen yet</b><span>since tracking began</span></div>;
   return (
-    <span className="activity">
-      <span className={`status ${p.inactiveGame ? 'bad' : 'ok'}`} title={`${day(p.game.lastSeenAt)} · ${p.game.game}`}>
-        {ago(p.game.lastSeenAt)}
-      </span>
-      <span className="muted">{hours(p.game.minutes)}</span>
-    </span>
+    <div className="when" title={`${day(p.game.lastSeenAt)} · ${p.game.game}`}>
+      <b className={p.inactiveGame ? 'bad' : ''}>{ago(p.game.lastSeenAt)}</b>
+      <span>{played(p.game.minutes)}</span>
+    </div>
   );
 }
 
-function DiscordCell({ p, guild }) {
-  if (!p.discordId) return <span className="muted">No Discord account found</span>;
-  if (!p.inServer) return <span className="status bad">Not in the server</span>;
-  if (!p.discord?.lastMessageAt) return <span className={`status ${p.inactiveDiscord ? 'bad' : 'idle'}`}>No messages seen</span>;
-  const channel = guild?.channels.find((c) => c.id === p.discord.lastChannelId);
+function DiscordCell({ p, channels }) {
+  if (!p.discordId) return <div className="when"><span>No Discord account found</span></div>;
+  if (!p.inServer) return <div className="when"><b className="bad">Left the server</b></div>;
+  if (!p.discord?.lastMessageAt) return <div className="when"><b className="bad">No messages seen</b></div>;
+  const channel = channels?.find((c) => c.id === p.discord.lastChannelId);
   return (
-    <span className="activity">
-      <span className={`status ${p.inactiveDiscord ? 'bad' : 'ok'}`} title={day(p.discord.lastMessageAt)}>
-        {ago(p.discord.lastMessageAt)}
-      </span>
-      {channel && <span className="muted">#{channel.name}</span>}
-    </span>
+    <div className="when" title={day(p.discord.lastMessageAt)}>
+      <b className={p.inactiveDiscord ? 'bad' : ''}>{ago(p.discord.lastMessageAt)}</b>
+      {channel && <span>#{channel.name}</span>}
+    </div>
   );
 }
 
-function Person({ p, guild, inactiveDays, spare, busy, onMatch }) {
+function StatusCell({ p }) {
+  if (p.game?.online) return <Badge tone="ok">Playing</Badge>;
+  if (p.inactiveGame && p.inactiveDiscord) return <Badge tone="bad">Inactive</Badge>;
+  if (p.inactiveGame || p.inactiveDiscord) return <Badge tone="warn">{p.inactiveGame ? 'Not playing' : 'Quiet'}</Badge>;
+  return <Badge tone="ok">Active</Badge>;
+}
+
+function Person({ p, channels, spare, busy, onMatch }) {
   const [picking, setPicking] = useState(false);
+  const name = p.discordName ?? p.displayName ?? p.username;
   return (
-    <li className={p.inactiveGame || p.inactiveDiscord ? 'quiet' : ''}>
-      <div className="link-who">
-        {p.discordAvatar ? <img src={p.discordAvatar} alt="" /> : <span className="guild-icon">?</span>}
+    <div className="team-row">
+      <div className="who">
+        {p.discordAvatar ? <img className="avatar-sm" src={p.discordAvatar} alt="" /> : <span className="avatar-sm">{(name ?? '?')[0]}</span>}
         <div className="grow">
-          <div className="link-names">
-            {p.discordName && <strong>{p.discordName}</strong>}
-            {p.username ? (
-              <a href={`https://www.roblox.com/users/${p.robloxId}/profile`} target="_blank" rel="noreferrer">
+          <div className="who-names">
+            <strong>{name}</strong>
+            {p.username && (
+              <a href={`https://www.roblox.com/users/${p.robloxId}/profile`} target="_blank" rel="noreferrer" title="Roblox profile">
                 @{p.username}
               </a>
-            ) : null}
-            {p.matchedBy === 'name' && <span className="muted" title="Matched by their Discord name">by name</span>}
-            {p.matchedBy === 'matched' && (
-              <button type="button" className="danger-text" disabled={busy} onClick={() => onMatch(p.robloxId, null)}>
-                Unmatch
-              </button>
             )}
-            {p.robloxId && !p.discordId && !picking && (
-              <button type="button" className="link-text" disabled={busy} onClick={() => setPicking(true)}>
+          </div>
+          <div className="who-sub">
+            {[...new Set([...p.robloxRoles, ...p.discordRoles])].map((r) => (
+              <span key={r} className="pill">
+                {r}
+              </span>
+            ))}
+            {p.matchedBy === 'name' && <span className="subtle" title="Matched by their Discord name">· matched by name</span>}
+            {p.matchedBy === 'matched' && (
+              <Button size="sm" variant="ghost-danger" disabled={busy} onClick={() => onMatch(p, null)}>
+                Unmatch
+              </Button>
+            )}
+            {p.robloxId && !p.discordId && !picking && spare.length > 0 && (
+              <Button size="sm" variant="ghost" icon="link" disabled={busy} onClick={() => setPicking(true)}>
                 Match Discord
-              </button>
+              </Button>
             )}
           </div>
           {picking && (
             <select
               className="match-pick"
               value=""
+              autoFocus
               disabled={busy}
+              onBlur={() => setPicking(false)}
               onChange={(e) => {
-                if (e.target.value) onMatch(p.robloxId, e.target.value);
+                if (e.target.value) onMatch(p, e.target.value);
                 setPicking(false);
               }}
             >
@@ -121,194 +119,179 @@ function Person({ p, guild, inactiveDays, spare, busy, onMatch }) {
               ))}
             </select>
           )}
-          <div className="link-roles">
-            {[...new Set([...p.robloxRoles, ...p.discordRoles])].map((r) => (
-              <span key={r} className="role-pill">
-                {r}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
-      <div className="team-cells">
-        <div>
-          <span className="field-label">Game</span>
-          <GameCell p={p} inactiveDays={inactiveDays} />
-        </div>
-        <div>
-          <span className="field-label">Discord</span>
-          <DiscordCell p={p} guild={guild} />
-        </div>
+      <div>
+        <span className="cell-label">Last played</span>
+        <GameCell p={p} />
       </div>
-    </li>
+      <div>
+        <span className="cell-label">Last message</span>
+        <DiscordCell p={p} channels={channels} />
+      </div>
+      <div>
+        <span className="cell-label">Status</span>
+        <StatusCell p={p} />
+      </div>
+    </div>
   );
 }
 
-function Group({ group, guild, inactiveDays, busy, onMatch }) {
+function Group({ group, channels, inactiveDays, busy, onMatch }) {
   const [filter, setFilter] = useState('inactive');
   const [search, setSearch] = useState('');
   const people = group.people;
-  const quiet = people.filter((p) => p.inactiveGame || p.inactiveDiscord).length;
-  const online = people.filter((p) => p.game?.online).length;
-  const shown = people.filter((p) => matches(p, filter, search));
+  const counts = Object.fromEntries(FILTERS.map((f) => [f.value, people.filter(f.test).length]));
+  const test = FILTERS.find((f) => f.value === filter).test;
+  const shown = people.filter((p) => test(p) && searchHit(p, search));
   // (Discord members of this group no Roblox account was found for: who an unmatched Roblox account could be)
   const spare = people.filter((p) => !p.robloxId && p.inServer).sort((a, b) => a.discordName.localeCompare(b.discordName));
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>
-          {group.name} <span className="muted">({people.length})</span>
-        </h2>
-        <span className="muted">
-          {quiet} inactive{online ? ` · ${online} in game` : ''}
-        </span>
+    <Card
+      title={group.name}
+      description={`${people.length} people · ${counts.inactive} haven’t played or chatted in ${inactiveDays}+ days`}
+      bodyClass=""
+      aside={counts.online > 0 ? <Badge tone="ok" dot>{counts.online} in game now</Badge> : null}
+    >
+      <div className="team-toolbar">
+        <Segmented label="Show" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: counts[f.value] }))} />
+        <input type="search" placeholder="Search a name…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label={`Search ${group.name}`} />
       </div>
-      <div className="row team-tools">
-        <div className="segmented">
-          {FILTERS.map(([id, label]) => (
-            <button key={id} type="button" className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>
-              {label}
-            </button>
+      {shown.length === 0 ? (
+        <Empty icon={filter === 'inactive' ? 'check' : 'search'} title={search ? 'Nobody by that name here' : filter === 'inactive' ? 'Everyone’s active' : 'Nobody here'}>
+          {search ? 'Try another filter, or clear the search.' : null}
+        </Empty>
+      ) : (
+        <>
+          <div className="team-head" aria-hidden="true">
+            <span>Person</span>
+            <span>Last played</span>
+            <span>Last message</span>
+            <span>Status</span>
+          </div>
+          {shown.map((p) => (
+            <Person key={p.robloxId ?? `d${p.discordId}`} p={p} channels={channels} spare={spare} busy={busy} onMatch={onMatch} />
           ))}
-        </div>
-        <input className="grow" type="search" placeholder="Search a name…" value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
-      {!shown.length && <p className="muted">Nobody here.</p>}
-      <ul className="links team">
-        {shown.map((p) => (
-          <Person
-            key={p.robloxId ?? `d${p.discordId}`}
-            p={p}
-            guild={guild}
-            inactiveDays={inactiveDays}
-            spare={spare}
-            busy={busy}
-            onMatch={onMatch}
-          />
-        ))}
-      </ul>
-    </section>
+        </>
+      )}
+    </Card>
   );
 }
 
-function Settings({ data, guild, busy, onSave }) {
+function Settings({ data, guild, onSave }) {
   const [form, setForm] = useState(() => structuredClone(data.settings));
+  const [busy, setBusy] = useState(false);
   useEffect(() => setForm(structuredClone(data.settings)), [data.settings]);
   const dirty = JSON.stringify(form) !== JSON.stringify(data.settings);
+  const nudge = useReportDirty(dirty);
   const robloxRoles = data.groupRoles.map((r) => ({ id: String(r.id), name: r.name, problem: null }));
   const discordRoles = (guild?.roles ?? []).map((r) => ({ id: r.id, name: r.name, problem: null }));
   const setGroup = (i, changes) => setForm({ ...form, groups: form.groups.map((g, j) => (j === i ? { ...g, ...changes } : g)) });
+  const days = Number(form.inactiveDays);
+  const blocked = !Number.isInteger(days) || days < 1 || days > 90
+    ? 'Inactive after must be 1 to 90 days'
+    : form.groups.some((g) => !g.name.trim())
+      ? 'Every group needs a name'
+      : form.groups.some((g) => !g.robloxRoleIds.length && !g.discordRoleIds.length)
+        ? 'Every group needs at least one role'
+        : null;
+  const save = async () => {
+    setBusy(true);
+    await onSave({ ...form, inactiveDays: days });
+    setBusy(false);
+  };
   return (
-    <form
-      className="card"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave(form);
-      }}
-    >
-      <h2>Groups</h2>
-      <p className="muted">
-        Who counts as each group: anyone holding one of its Roblox roles in the group, or one of its Discord roles here.
-      </p>
-      <label className="field small-wide">
-        <span>Inactive after (days without playing or chatting)</span>
-        <input
-          type="number"
-          min="1"
-          max="90"
-          value={form.inactiveDays}
-          onChange={(e) => setForm({ ...form, inactiveDays: Number(e.target.value) })}
-        />
-      </label>
-      {form.groups.map((g, i) => (
-        <div key={i} className="team-group">
-          <div className="row">
-            <label className="field grow">
-              <span>Name</span>
-              <input value={g.name} maxLength={40} onChange={(e) => setGroup(i, { name: e.target.value })} />
-            </label>
-            <button
-              type="button"
-              disabled={form.groups.length < 2}
-              onClick={() => setForm({ ...form, groups: form.groups.filter((_, j) => j !== i) })}
-            >
-              Remove
-            </button>
+    <>
+      <Card
+        title="Groups and rules"
+        description="Who counts in each group: anyone holding one of its Roblox roles in the group, or one of its Discord roles here."
+        footer={
+          <Button
+            icon="plus"
+            disabled={form.groups.length >= 8}
+            onClick={() => setForm({ ...form, groups: [...form.groups, { name: 'New group', robloxRoleIds: [], discordRoleIds: [] }] })}
+          >
+            Add group
+          </Button>
+        }
+      >
+        <Field label="Inactive after" hint="Days without playing or chatting before someone shows as inactive.">
+          <div className="row" style={{ alignItems: 'center' }}>
+            <input type="number" min="1" max="90" aria-label="Inactive after (days)" value={form.inactiveDays} onChange={(e) => setForm({ ...form, inactiveDays: e.target.value })} className={blocked?.startsWith('Inactive') ? 'invalid' : ''} />
+            <span className="muted">days</span>
           </div>
-          <div className="field">
-            <span>Roblox group roles</span>
-            <RoleChips
-              roles={robloxRoles}
-              value={g.robloxRoleIds.map(String)}
-              onChange={(ids) => setGroup(i, { robloxRoleIds: ids.map(Number) })}
-            />
+        </Field>
+        {form.groups.map((g, i) => (
+          <div key={i} className="team-group">
+            <div className="team-group-head">
+              <Field label="Group name" className="grow">
+                <input value={g.name} maxLength={40} onChange={(e) => setGroup(i, { name: e.target.value })} className={!g.name.trim() ? 'invalid' : ''} />
+              </Field>
+              <Button variant="ghost-danger" icon="trash" disabled={form.groups.length < 2} onClick={() => setForm({ ...form, groups: form.groups.filter((_, j) => j !== i) })}>
+                Remove
+              </Button>
+            </div>
+            <Field label="Roblox group roles">
+              <RoleChips roles={robloxRoles} value={g.robloxRoleIds.map(String)} onChange={(ids) => setGroup(i, { robloxRoleIds: ids.map(Number) })} addLabel="Add Roblox role…" />
+            </Field>
+            <Field label="Discord roles">
+              <RoleChips roles={discordRoles} value={g.discordRoleIds} onChange={(ids) => setGroup(i, { discordRoleIds: ids })} addLabel="Add Discord role…" />
+            </Field>
           </div>
-          <div className="field">
-            <span>Discord roles</span>
-            <RoleChips roles={discordRoles} value={g.discordRoleIds} onChange={(ids) => setGroup(i, { discordRoleIds: ids })} />
-          </div>
-        </div>
-      ))}
-      <div className="actions">
-        <button type="submit" className="primary" disabled={busy || !dirty}>
-          {busy ? 'Saving…' : 'Save changes'}
-        </button>
-        <button
-          type="button"
-          disabled={busy || form.groups.length >= 8}
-          onClick={() => setForm({ ...form, groups: [...form.groups, { name: 'New group', robloxRoleIds: [], discordRoleIds: [] }] })}
-        >
-          Add group
-        </button>
-        {dirty && (
-          <button type="button" disabled={busy} onClick={() => setForm(structuredClone(data.settings))}>
-            Discard
-          </button>
-        )}
-      </div>
-    </form>
+        ))}
+      </Card>
+      <SaveBar dirty={dirty} busy={busy} blocked={blocked} nudge={nudge} onSave={save} onDiscard={() => setForm(structuredClone(data.settings))} />
+    </>
   );
 }
 
-function Tracking({ data, busy, onScan }) {
+function Tracking({ data, scanning, onScan }) {
   const { since, scan, game } = data;
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Tracking</h2>
-        {!game.keySet ? (
-          <span className="status bad">Bot has no GAME_API_KEY</span>
+    <Card
+      title="Tracking"
+      description={
+        <>
+          Game time since <strong>{day(since.game)}</strong> (the game reports group members as they play). Discord messages since{' '}
+          <strong>{day(since.discord)}</strong>
+          {since.scannedAt ? `, plus recent history scanned ${ago(since.scannedAt)}` : ''}. Only when they chatted is kept, never what they said.
+        </>
+      }
+      aside={
+        !game.keySet ? (
+          <Badge tone="bad" dot>No GAME_API_KEY</Badge>
         ) : game.lastSeenAt ? (
-          <span className="status ok">Game connected {ago(game.lastSeenAt)}</span>
+          <Badge tone="ok" dot>Game connected {ago(game.lastSeenAt)}</Badge>
         ) : (
-          <span className="status idle">Game hasn’t reported since the bot started</span>
-        )}
+          <Badge dot>Game hasn’t reported yet</Badge>
+        )
+      }
+    >
+      <div className="row" style={{ alignItems: 'center' }}>
+        <Button icon="refresh" loading={scanning} disabled={scan?.running} onClick={onScan}>
+          {scan?.running ? `Scanning ${scan.done}/${scan.channels} channels…` : 'Scan Discord history'}
+        </Button>
+        <span className="subtle">
+          {scan?.running
+            ? `${scan.messages.toLocaleString()} messages read so far`
+            : scan?.error
+              ? `Last scan failed: ${scan.error}`
+              : scan
+                ? `Last scan read ${scan.messages.toLocaleString()} messages.`
+                : 'Reads the newest 1,000 messages of every channel to fill in who chatted before tracking began.'}
+        </span>
       </div>
-      <p className="muted">
-        Game time since <strong>{day(since.game)}</strong> (Mangingisda reports group members as they play). Discord
-        messages since <strong>{day(since.discord)}</strong>
-        {since.scannedAt ? `, plus recent history scanned ${ago(since.scannedAt)}` : ''}. Only when they chatted is kept,
-        never what they said.
-      </p>
-      <div className="row">
-        <button type="button" disabled={busy || scan?.running} onClick={onScan}>
-          {scan?.running ? `Scanning… ${scan.done}/${scan.channels} channels` : 'Scan Discord history'}
-        </button>
-        {scan && !scan.running && (
-          <span className="muted">
-            {scan.error ? `Scan failed: ${scan.error}` : `Last scan read ${scan.messages.toLocaleString()} messages.`}
-          </span>
-        )}
-      </div>
-    </section>
+    </Card>
   );
 }
 
 export default function TeamEditor({ guildId, onError }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [data, setData] = useState(null);
   const [guild, setGuild] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const [scanning, setScanning] = useState(false);
 
   const load = () => api(`/guilds/${guildId}/team`).then(setData).catch(onError);
   useEffect(() => {
@@ -320,16 +303,25 @@ export default function TeamEditor({ guildId, onError }) {
     const id = setInterval(load, data?.scan?.running ? 4000 : 60000);
     return () => clearInterval(id);
   }, [guildId, data?.scan?.running]);
+  // (a scan that just finished)
+  const [wasRunning, setWasRunning] = useState(false);
+  useEffect(() => {
+    if (wasRunning && data && !data.scan?.running) {
+      toast(data.scan?.error ? { tone: 'error', title: 'History scan failed', text: data.scan.error } : { title: 'History scan done', text: `${data.scan.messages.toLocaleString()} messages read.` });
+    }
+    setWasRunning(Boolean(data?.scan?.running));
+  }, [data?.scan?.running]);
 
-  async function run(fn, okText) {
+  async function run(fn, success) {
     setBusy(true);
-    setNotice(null);
     try {
       setData(await fn());
-      if (okText) setNotice({ type: 'ok', text: okText });
+      if (success) toast(success);
+      return true;
     } catch (err) {
       onError(err);
-      setNotice({ type: 'error', text: err.message });
+      toast({ tone: 'error', title: 'That didn’t work', text: err.message });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -337,45 +329,81 @@ export default function TeamEditor({ guildId, onError }) {
 
   const totals = useMemo(() => {
     if (!data) return null;
-    const all = data.groups.flatMap((g) => g.people);
-    return { people: all.length, quiet: all.filter((p) => p.inactiveGame || p.inactiveDiscord).length };
+    const seen = new Map();
+    for (const g of data.groups) for (const p of g.people) seen.set(p.robloxId ?? `d${p.discordId}`, p);
+    const all = [...seen.values()];
+    return {
+      people: all.length,
+      quiet: all.filter((p) => p.inactiveGame || p.inactiveDiscord).length,
+      online: all.filter((p) => p.game?.online).length,
+      unmatched: all.filter((p) => !p.robloxId || !p.discordId).length,
+    };
   }, [data]);
 
-  if (!data) return <Loading />;
+  if (!data) return <PageSkeleton />;
+
+  async function onMatch(p, discordId) {
+    if (!discordId) {
+      const ok = await confirm({ title: `Unmatch @${p.username}?`, text: 'Their Roblox and Discord accounts show separately again.', confirmLabel: 'Unmatch' });
+      if (!ok) return;
+    }
+    run(() => api(`/guilds/${guildId}/team/match`, { method: 'PUT', body: { robloxId: p.robloxId, discordId } }), {
+      title: discordId ? `Matched @${p.username}` : `Unmatched @${p.username}`,
+    });
+  }
+
+  async function scan() {
+    setScanning(true);
+    await run(async () => {
+      await api(`/guilds/${guildId}/team/scan`, { method: 'POST' });
+      return api(`/guilds/${guildId}/team`);
+    }, { tone: 'info', title: 'Scanning Discord history', text: 'This takes a few minutes. You can keep working.' });
+    setScanning(false);
+  }
+
   return (
-    <div className="editor">
-      <Notice notice={notice} />
-      <Tracking
-        data={data}
-        busy={busy}
-        onScan={() =>
-          run(async () => {
-            await api(`/guilds/${guildId}/team/scan`, { method: 'POST' });
-            return api(`/guilds/${guildId}/team`);
-          })
-        }
-      />
-      <p className="muted">
-        {totals.quiet} of {totals.people} haven’t played or chatted in {data.settings.inactiveDays}+ days.
-      </p>
-      {data.groups.map((g) => (
-        <Group
-          key={g.name}
-          group={g}
+    <>
+      <PageHead title="Team" description="Who of your testers and staff last played and last chatted, and who’s gone quiet." />
+
+      <div className="stat-grid">
+        <section className={`card stat ${totals.quiet ? 'bad' : 'ok'}`}>
+          <span className="stat-value">{totals.quiet}</span>
+          <span className="stat-label">
+            <Icon name="clock" width="14" height="14" /> Inactive {data.settings.inactiveDays}+ days
+          </span>
+        </section>
+        <section className={`card stat ${totals.online ? 'ok' : ''}`}>
+          <span className="stat-value">{totals.online}</span>
+          <span className="stat-label">
+            <Icon name="game" width="14" height="14" /> In game now
+          </span>
+        </section>
+        <section className="card stat">
+          <span className="stat-value">{totals.people}</span>
+          <span className="stat-label">
+            <Icon name="users" width="14" height="14" /> People tracked
+          </span>
+        </section>
+        <section className="card stat">
+          <span className="stat-value">{totals.unmatched}</span>
+          <span className="stat-label" title="Only their Roblox or only their Discord account was found. Match them in the list.">
+            <Icon name="link" width="14" height="14" /> Missing an account
+          </span>
+        </section>
+      </div>
+
+      <div className="stack">
+        {data.groups.map((g) => (
+          <Group key={g.name} group={g} channels={guild?.channels} inactiveDays={data.settings.inactiveDays} busy={busy} onMatch={onMatch} />
+        ))}
+        {!data.groups.length && <Empty title="No groups">Add one below.</Empty>}
+        <Tracking data={data} scanning={scanning} onScan={scan} />
+        <Settings
+          data={data}
           guild={guild}
-          inactiveDays={data.settings.inactiveDays}
-          busy={busy}
-          onMatch={(robloxId, discordId) =>
-            run(() => api(`/guilds/${guildId}/team/match`, { method: 'PUT', body: { robloxId, discordId } }), discordId ? 'Matched.' : 'Unmatched.')
-          }
+          onSave={(form) => run(() => api(`/guilds/${guildId}/team`, { method: 'PUT', body: form }), { title: 'Saved', text: 'The lists are rebuilt with the new groups.' })}
         />
-      ))}
-      <Settings
-        data={data}
-        guild={guild}
-        busy={busy}
-        onSave={(form) => run(() => api(`/guilds/${guildId}/team`, { method: 'PUT', body: form }), 'Saved.')}
-      />
-    </div>
+      </div>
+    </>
   );
 }

@@ -1,4 +1,6 @@
-// Building blocks shared by the panel editors.
+// Building blocks shared by the panel editors: the Discord-style preview, role pickers, the panel channel card.
+import { useState } from 'react';
+import { Badge, Button, Card, Field, Icon, LinkButton } from './ui.jsx';
 
 const CUSTOM_EMOJI = /^<(a?):(\w+):(\d+)>$/;
 
@@ -28,32 +30,51 @@ export function renderMarkdown(text) {
   });
 }
 
-/** Discord-style preview: message text, a grid of gray buttons, and the private reply. */
-export function DiscordPreview({ content, buttons, disabled, reply }) {
+/** Wrenchy's message as Discord shows it: its avatar and name, then what's inside. */
+export function DiscordMessage({ bot, children }) {
   return (
-    <div className="discord">
-      <div className="discord-content">{renderMarkdown(content)}</div>
-      <div className="discord-buttons">
-        {buttons.map((b, i) => (
-          <button key={i} type="button" className="discord-button" disabled={disabled}>
-            {b.emoji && <Emoji value={b.emoji} />}
-            {b.label || 'Button'}
-          </button>
-        ))}
+    <div className="discord-msg">
+      <div className="discord-avatar">{bot?.avatar ? <img src={bot.avatar} alt="" /> : '🔧'}</div>
+      <div className="grow">
+        <div className="discord-name">
+          {bot?.tag?.split('#')[0] ?? 'Wrenchy'} <span className="discord-bot">APP</span>
+        </div>
+        {children}
       </div>
-      <p className="discord-reply">
-        <span className="muted">Reply after clicking (only they see it):</span> {renderMarkdown(reply)}
-      </p>
     </div>
   );
 }
 
-export function EnabledSwitch({ checked, onChange }) {
+/** A panel as Discord shows it: the message, its buttons, and the private reply someone gets after clicking. */
+export function DiscordPreview({ bot, content, buttons, disabled, reply, replyLabel = 'Reply after clicking (only they see it)' }) {
   return (
-    <label className="switch">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>{checked ? 'Enabled' : 'Disabled'}</span>
-    </label>
+    <div>
+      <div className="preview-label">
+        <span>Preview</span>
+        {disabled && <Badge tone="warn">Turned off: buttons greyed out</Badge>}
+      </div>
+      <div className="discord">
+        <DiscordMessage bot={bot}>
+          <div className="discord-content">{content ? renderMarkdown(content) : <span className="placeholder">Your message…</span>}</div>
+          <div className="discord-buttons">
+            {buttons.map((b, i) => (
+              <button key={i} type="button" className="discord-button" disabled={disabled} tabIndex={-1}>
+                {b.emoji && <Emoji value={b.emoji} />}
+                {b.label || 'Button'}
+              </button>
+            ))}
+          </div>
+        </DiscordMessage>
+        {reply && (
+          <div className="discord-reply">
+            <div className="discord-reply-label">
+              <Icon name="info" width="12" height="12" /> {replyLabel}
+            </div>
+            {renderMarkdown(reply)}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -67,76 +88,75 @@ export function RoleOptions({ roles }) {
 }
 
 /** Multi-role picker: selected roles as removable chips, plus a dropdown to add more. */
-export function RoleChips({ roles, value, onChange, exclude = [] }) {
-  const selected = value.map((id) => roles.find((r) => r.id === id) ?? { id, name: 'deleted-role', problem: 'missing' });
+export function RoleChips({ roles, value, onChange, exclude = [], addLabel = 'Add role…' }) {
+  const selected = value.map((id) => roles.find((r) => r.id === id) ?? { id, name: 'deleted role', problem: 'This role no longer exists' });
   const available = roles.filter((r) => !value.includes(r.id) && !exclude.includes(r.id));
   return (
     <div className="chips">
       {selected.map((r) => (
         <span key={r.id} className={`chip${r.problem ? ' chip-bad' : ''}`} title={r.problem ?? ''}>
           @{r.name}
-          <button type="button" aria-label={`Remove @${r.name}`} onClick={() => onChange(value.filter((id) => id !== r.id))}>
+          <button type="button" aria-label={`Remove @${r.name}`} title="Remove" onClick={() => onChange(value.filter((id) => id !== r.id))}>
             ✕
           </button>
         </span>
       ))}
-      <select className="chip-add" value="" onChange={(e) => e.target.value && onChange([...value, e.target.value])}>
-        <option value="">+ Add role…</option>
-        <RoleOptions roles={available} />
-      </select>
-    </div>
-  );
-}
-
-export function SaveBar({ busy, dirty, canSave = true, onDiscard }) {
-  return (
-    <div className="actions">
-      <button type="submit" className="primary" disabled={busy || !dirty || !canSave}>
-        {busy ? 'Saving…' : 'Save changes'}
-      </button>
-      {dirty && (
-        <button type="button" disabled={busy} onClick={onDiscard}>
-          Discard
-        </button>
-      )}
-    </div>
-  );
-}
-
-export function PanelChannelCard({ editor, onPost }) {
-  const { guild, channelId, setChannelId, panelUrl, busy, dirty } = editor;
-  return (
-    <section className="card">
-      <h2>Panel channel</h2>
-      <p className="muted">Wrenchy posts the panel here. Posting again removes the old one.</p>
-      <div className="row">
-        <select className="grow" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-          <option value="">Select a channel…</option>
-          {guild.channels.map((c) => (
-            <option key={c.id} value={c.id} disabled={!c.canPost}>
-              #{c.name}
-              {c.category ? ` (${c.category})` : ''}
-              {c.canPost ? '' : ' (no permission)'}
-            </option>
-          ))}
+      {available.length > 0 && (
+        <select className="chip-add" value="" aria-label={addLabel} onChange={(e) => e.target.value && onChange([...value, e.target.value])}>
+          <option value="">+ {addLabel}</option>
+          <RoleOptions roles={available} />
         </select>
-        <button type="button" className="primary" disabled={busy || !channelId} onClick={onPost}>
-          {panelUrl ? 'Re-post panel' : 'Post panel'}
-        </button>
-      </div>
-      {dirty && <small className="muted">Your unsaved changes will be saved first.</small>}
-    </section>
+      )}
+      {!selected.length && !available.length && <span className="subtle">No roles to pick</span>}
+    </div>
   );
 }
 
-export function Notice({ notice }) {
-  return notice ? <div className={`notice ${notice.type}`}>{notice.text}</div> : null;
-}
-
-export function Loading() {
+/** Where the panel is posted, and the button that posts it. */
+export function PanelChannelCard({ editor, onPost, what = 'panel' }) {
+  const { guild, channelId, setChannelId, panelUrl, busy, dirty } = editor;
+  const [posting, setPosting] = useState(false);
+  const current = guild.channels.find((c) => c.id === guild[editor.kind]?.channelId);
+  const post = async () => {
+    setPosting(true);
+    await onPost();
+    setPosting(false);
+  };
   return (
-    <section className="card">
-      <p className="muted">Loading server…</p>
-    </section>
+    <Card
+      title="Post in Discord"
+      description={`Wrenchy posts the ${what} in this channel. Posting again moves it there and removes the old one.`}
+      aside={
+        panelUrl ? (
+          <Badge tone="ok" dot>
+            Posted in #{current?.name ?? 'a channel'}
+          </Badge>
+        ) : (
+          <Badge tone="warn" dot>
+            Not posted yet
+          </Badge>
+        )
+      }
+    >
+      <div className="row">
+        <Field label="Channel" className="grow">
+          <select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+            <option value="">Pick a channel…</option>
+            {guild.channels.map((c) => (
+              <option key={c.id} value={c.id} disabled={!c.canPost}>
+                #{c.name}
+                {c.category ? ` · ${c.category}` : ''}
+                {c.canPost ? '' : ' (Wrenchy can’t post here)'}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Button variant="primary" icon="send" loading={posting} disabled={busy || !channelId} onClick={post}>
+          {panelUrl ? 'Re-post' : 'Post'} {what}
+        </Button>
+        {panelUrl && <LinkButton href={panelUrl}>View</LinkButton>}
+      </div>
+      {dirty && <p className="hint" style={{ marginBottom: 0 }}>Your unsaved changes are saved first.</p>}
+    </Card>
   );
 }
