@@ -153,9 +153,9 @@ export default function RobloxEditor({ guildId, onError }) {
           title="Bloxlink verification"
           description={
             <>
-              Members with this role are linked from their Bloxlink nickname, <strong>Display (@username)</strong>: “vai (@VA1_N)”
-              links to VA1_N. They’re updated when they get the role or change their nickname, and with <code>/update</code> and{' '}
-              <code>/updateall</code>. Lose the role and the bound roles come off.
+              Members with this role are linked to the Roblox username in their nickname, whatever the format: “vai (@VA1_N)”,
+              “VA1_N” and “vai | VA1_N” all link to VA1_N. They’re updated when they get the role or change their nickname, and
+              with <code>/update</code> and <code>/updateall</code>. Lose the role and the bound roles come off.
             </>
           }
         >
@@ -173,7 +173,7 @@ export default function RobloxEditor({ guildId, onError }) {
             <p className="subtle">
               {overview.verified.count} verified member{overview.verified.count === 1 ? '' : 's'}
               {overview.verified.unreadable.length
-                ? `, ${overview.verified.unreadable.length} with a nickname that doesn’t name an account:`
+                ? `, ${overview.verified.unreadable.length} not linked:`
                 : '.'}
             </p>
           )}
@@ -184,7 +184,8 @@ export default function RobloxEditor({ guildId, onError }) {
                 .map((m) => `${m.discordName}${m.nickname ? '' : ' (no nickname)'}`)
                 .join(', ')}
               {overview.verified.unreadable.length > 12 ? ` and ${overview.verified.unreadable.length - 12} more` : ''}. Their
-              nickname needs to end in (@username): have them run Bloxlink’s /update.
+              nickname needs their Roblox username in it (Bloxlink’s /update sets it), then press Update everyone.
+              <code>/update</code> on one of them says what’s wrong.
             </Notice>
           )}
         </Card>

@@ -6,7 +6,8 @@ import { syncMember } from './sync.js';
 // RANK SYNC FROM BLOXLINK (the owner, 2026-10-25: "if they have "Verified" role, then that means they are verified by
 // the bloxlink bot and their nickname would be "display name (@username)" ... Use that as the bind, and thennn. Bind
 // their roles from the group"). A member holding the server's Verified role (GuildConfig roblox.verifiedRoleId) whose
-// nickname ends in "(@username)" is linked to that Roblox account (a RobloxLink). Bloxlink, an outside bot, does the
+// nickname has their Roblox username in it is linked to that account (a RobloxLink): the format isn't fixed ("Display
+// (@username) isn't the fixed stuff, as long as the username is there"; nicknamePick). Bloxlink, an outside bot, does the
 // verifying: Wrenchy only reads its role and nickname ("bloxlink handles the linking ... u just base it on their
 // nicknames if they are verified and has the verified role"). Their group roles come from the bound roles' member
 // lists, which list a member under EVERY role they hold (the per-user API only gives the highest). Then the role
@@ -16,12 +17,56 @@ import { syncMember } from './sync.js';
 //   updateGuild(guild, rc, opts)      every Verified or linked member: /updateall, the dashboard's Update everyone and
 //                                     a saved Roblox Link page
 // Someone who loses the Verified role (or whose nickname stops naming the account) is unlinked and loses the bound
-// roles. A Verified member with no "(@username)" in their nickname is only reported: nothing of theirs is touched.
+// roles. A Verified member whose nickname names no account (or several, unclearly) is only reported: nothing of
+// theirs is touched.
 
-/** The Roblox username a Bloxlink nickname names ("vai (@VA1_N)" -> "VA1_N"), or null. */
-export function nicknameUsername(member) {
-  const m = (member.nickname ?? '').match(/\(@([A-Za-z0-9_]{3,20})\)\s*$/);
-  return m ? m[1] : null;
+const WORD = /[A-Za-z0-9_]{3,20}/g; // (a Roblox username: 3-20 letters, digits, underscores)
+
+/**
+ * The Roblox usernames a member's nickname could name, the likeliest first: the ones marked as a username
+ * ("@VA1_N", "(VA1_N)"), then every other word ("vai | VA1_N" -> vai, VA1_N). { explicit: [...], words: [...] }
+ */
+export function nicknameNames(member) {
+  const nick = member.nickname ?? '';
+  const seen = new Set();
+  const take = (list) =>
+    list.filter((n) => {
+      const k = n.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  const explicit = take([...nick.matchAll(/@([A-Za-z0-9_]{3,20})/g), ...nick.matchAll(/\(([A-Za-z0-9_]{3,20})\)/g)].map((m) => m[1]));
+  return { explicit, words: take(nick.match(WORD) ?? []) };
+}
+
+/** Every name in the nickname, for looking them all up at once. */
+export function nicknameCandidates(member) {
+  const { explicit, words } = nicknameNames(member);
+  return [...explicit, ...words];
+}
+
+/**
+ * Which Roblox account the nickname names, from the looked-up names (resolved: lowercased name -> account):
+ * { user } or { why }. A marked name wins (@name or (name)); else the only word that's a real account; else, when
+ * several are ("vai VA1_N"), the one whose display name is in the nickname too (VA1_N, display name vai).
+ */
+export function nicknamePick(member, resolved) {
+  const { explicit, words } = nicknameNames(member);
+  for (const n of explicit) {
+    const u = resolved.get(n.toLowerCase());
+    if (u) return { user: u };
+  }
+  const found = [...new Map(words.map((n) => resolved.get(n.toLowerCase())).filter(Boolean).map((u) => [u.robloxId, u])).values()];
+  if (found.length === 1) return { user: found[0] };
+  if (!found.length) return { why: words.length ? 'no Roblox username in their nickname' : 'no nickname' };
+  const nick = member.nickname.toLowerCase();
+  const byDisplay = found.filter((u) => {
+    const d = (u.displayName ?? '').toLowerCase();
+    return d && d !== u.username.toLowerCase() && nick.includes(d);
+  });
+  if (byDisplay.length === 1) return { user: byDisplay[0] };
+  return { why: `nickname names several accounts (${found.map((u) => `@${u.username}`).join(', ')}): put @ before theirs` };
 }
 
 export const isVerified = (rc, member) => Boolean(rc.verifiedRoleId && member.roles.cache.has(rc.verifiedRoleId));
@@ -45,7 +90,8 @@ export async function rolesContext(rc, { fresh = false } = {}) {
     }
     fetched.add(role.id);
   }
-  return { known, holders, fetched, resolved: new Map() };
+  // (resolved: lowercased username -> account, for the nicknames; looked: every name already asked about)
+  return { known, holders, fetched, resolved: new Map(), looked: new Set() };
 }
 
 /** A link's bound group roles, from the member lists. Changed? */
@@ -70,15 +116,15 @@ async function linkFor(rc, member, ctx) {
   };
   if (!rc.verifiedRoleId) return drop(null);
   if (!isVerified(rc, member)) return drop('not verified');
-  const name = nicknameUsername(member);
-  if (!name) return drop('nickname isn’t “Display (@username)”');
-  const key = name.toLowerCase();
-  let user = ctx.resolved.get(key);
-  if (!user) {
-    user = (await resolveUsernames([name])).get(key);
-    if (user) ctx.resolved.set(key, user);
+  // (the names not looked up yet in this run, all at once)
+  const missing = nicknameCandidates(member).filter((n) => !ctx.resolved.has(n.toLowerCase()) && !ctx.looked?.has(n.toLowerCase()));
+  if (missing.length) {
+    for (const [k, u] of await resolveUsernames(missing)) ctx.resolved.set(k, u);
+    ctx.looked ??= new Set();
+    missing.forEach((n) => ctx.looked.add(n.toLowerCase()));
   }
-  if (!user) return drop(`no Roblox account called @${name}`);
+  const { user, why } = nicknamePick(member, ctx.resolved);
+  if (!user) return drop(why);
   const taken = await RobloxLink.findOne({ robloxId: user.robloxId, discordId: { $ne: member.id } });
   if (taken) return drop(`@${user.username} is already linked to <@${taken.discordId}>`);
   if (existing) {
@@ -118,8 +164,11 @@ export async function updateGuild(guild, rc, { fresh = false, onProgress } = {})
   await guild.members.fetch();
   const linkedIds = new Set((await RobloxLink.find({}, { discordId: 1 }).lean()).map((l) => l.discordId));
   const members = [...guild.members.cache.values()].filter((m) => !m.user.bot && (linkedIds.has(m.id) || isVerified(rc, m)));
-  const names = members.map(nicknameUsername).filter(Boolean);
-  if (names.length) ctx.resolved = await resolveUsernames(names);
+  const names = members.flatMap(nicknameCandidates);
+  if (names.length) {
+    ctx.resolved = await resolveUsernames(names);
+    ctx.looked = new Set(names.map((n) => n.toLowerCase())); // (the names Roblox didn't know: not asked again)
+  }
 
   const summary = { checked: 0, linked: 0, changed: 0, unlinked: 0, notLinked: [], problems: [] };
   for (const member of members) {

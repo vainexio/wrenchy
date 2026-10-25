@@ -4,7 +4,7 @@ import { handleRoleButton } from './interactions/roleButton.js';
 import { handleVerifyButton } from './interactions/verifyButton.js';
 import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
 import { GuildConfig, getGuildConfig } from '../models/GuildConfig.js';
-import { isVerified, nicknameUsername, updateMember } from '../roblox/verified.js';
+import { isVerified, updateMember } from '../roblox/verified.js';
 import { recordMessage, startDiscordActivity } from '../team/discordActivity.js';
 
 const buttonHandlers = {
@@ -73,7 +73,7 @@ client.on(Events.GuildMemberUpdate, async (before, after) => {
   const gc = await getGuildConfig(after.guild.id).catch(() => null);
   const rc = gc?.roblox;
   if (!rc?.enabled || !rc.verifiedRoleId) return;
-  if (isVerified(rc, before) === isVerified(rc, after) && nicknameUsername(before) === nicknameUsername(after)) return;
+  if (isVerified(rc, before) === isVerified(rc, after) && (before.nickname ?? '') === (after.nickname ?? '')) return;
   clearTimeout(pendingUpdates.get(after.id));
   pendingUpdates.set(
     after.id,

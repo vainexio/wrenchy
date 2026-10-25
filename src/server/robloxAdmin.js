@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { getGuildConfig } from '../models/GuildConfig.js';
 import { RobloxLink } from '../models/RobloxLink.js';
 import { getKnownGroupRoles } from '../roblox/api.js';
-import { isVerified, nicknameUsername, updateGuild } from '../roblox/verified.js';
+import { isVerified, updateGuild } from '../roblox/verified.js';
 import { HttpError } from './errors.js';
 
 const MAX_BINDINGS = 50;
@@ -89,12 +89,12 @@ export async function robloxOverview(client, guild) {
       };
     }),
   );
-  // Bloxlink: Verified members whose nickname doesn't name a Roblox account (they can't be linked)
+  // Bloxlink: Verified members who aren't linked (their nickname named no account, or several, at the last update)
   const rc = (await getGuildConfig(guild.id)).roblox;
   const linked = new Set(links.map((l) => l.discordId));
   const verified = rc.verifiedRoleId ? guild.members.cache.filter((m) => !m.user.bot && isVerified(rc, m)) : new Map();
   const unreadable = [...verified.values()]
-    .filter((m) => !linked.has(m.id) && !nicknameUsername(m))
+    .filter((m) => !linked.has(m.id))
     .map((m) => ({ discordId: m.id, discordName: m.displayName, nickname: m.nickname ?? null }));
   return {
     groupId: config.defaultRobloxGroupId,
