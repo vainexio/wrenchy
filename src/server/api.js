@@ -212,8 +212,8 @@ export function createApiRouter(client, auth) {
 
   router.post('/guilds/:guildId/roblox/sync', async (req, res) => {
     const guild = getGuild(client, req.params.guildId);
-    const result = await syncGuild(guild, await getGuildConfig(guild.id));
-    res.json({ ...result, ...(await robloxOverview(client, guild)) });
+    const result = await syncGuild(guild, await getGuildConfig(guild.id), { fresh: true });
+    res.json({ ...result, notLinked: result.notLinked.length, ...(await robloxOverview(client, guild)) });
   });
 
   // Team activity: who of the testers / staff last played and last chatted, and when

@@ -1,8 +1,10 @@
 import { checkAssignable } from '../bot/roles.js';
 import { config } from '../config.js';
+import { getGuildConfig } from '../models/GuildConfig.js';
 import { RobloxLink } from '../models/RobloxLink.js';
 import { getKnownGroupRoles } from '../roblox/api.js';
-import { syncEverywhere, syncMember } from '../roblox/sync.js';
+import { syncEverywhere } from '../roblox/sync.js';
+import { isVerified, nicknameUsername, updateGuild } from '../roblox/verified.js';
 import { HttpError } from './errors.js';
 import { gameStatus } from './game.js';
 
@@ -49,6 +51,13 @@ export async function applyRoblox(guild, guildConfig, body) {
   if (body.linkedRoleId !== undefined) {
     rc.linkedRoleId = body.linkedRoleId ? assignableRole(guild, body.linkedRoleId, 'Linked role') : null;
   }
+  // (Bloxlink's Verified role: read, never given, so any role will do)
+  if (body.verifiedRoleId !== undefined) {
+    if (body.verifiedRoleId && !guild.roles.cache.has(body.verifiedRoleId)) {
+      throw new HttpError(400, 'Verified role: that Discord role no longer exists.');
+    }
+    rc.verifiedRoleId = body.verifiedRoleId || null;
+  }
 
   if (body.bindings !== undefined) {
     if (!Array.isArray(body.bindings)) throw new HttpError(400, 'bindings must be a list.');
@@ -71,19 +80,9 @@ export async function applyRoblox(guild, guildConfig, body) {
   }
 }
 
-/** Resyncs every linked member in one server (after settings change, or "Sync everyone"). */
-export async function syncGuild(guild, guildConfig) {
-  const links = await RobloxLink.find();
-  let changed = 0;
-  for (const link of links) {
-    try {
-      const result = await syncMember(guild, guildConfig.roblox, link.discordId, link);
-      if (result && (result.added.length || result.removed.length)) changed += 1;
-    } catch (err) {
-      console.error(`[roblox] sync failed for @${link.username}:`, err.message);
-    }
-  }
-  return { linked: links.length, changed };
+/** Updates everyone Verified or linked in one server (after settings change, or "Sync everyone"). */
+export async function syncGuild(guild, guildConfig, { fresh = false } = {}) {
+  return updateGuild(guild, guildConfig.roblox, { fresh });
 }
 
 /** The Roblox tab's live data: group roles, linked staff, game connection. */
@@ -108,13 +107,22 @@ export async function robloxOverview(client, guild) {
         rolesFrom: l.rolesFrom,
         rolesAt: l.rolesAt,
         syncedAt: l.syncedAt,
+        source: l.source ?? 'game',
       };
     }),
   );
+  // Bloxlink: Verified members whose nickname doesn't name a Roblox account (they can't be linked)
+  const rc = (await getGuildConfig(guild.id)).roblox;
+  const linked = new Set(links.map((l) => l.discordId));
+  const verified = rc.verifiedRoleId ? guild.members.cache.filter((m) => !m.user.bot && isVerified(rc, m)) : new Map();
+  const unreadable = [...verified.values()]
+    .filter((m) => !linked.has(m.id) && !nicknameUsername(m))
+    .map((m) => ({ discordId: m.id, discordName: m.displayName, nickname: m.nickname ?? null }));
   return {
     groupId: config.defaultRobloxGroupId,
     groupRoles,
     links: members,
+    verified: { count: verified.size, unreadable },
     game: { keySet: Boolean(config.gameApiKey), lastSeenAt: gameStatus.lastSeenAt },
   };
 }

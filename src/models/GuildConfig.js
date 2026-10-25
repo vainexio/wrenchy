@@ -68,6 +68,9 @@ const robloxSchema = new mongoose.Schema(
     buttonEmoji: { type: String, default: '🔗' },
     gameUrl: { type: String, default: '' },
     linkedRoleId: { type: String, default: null },
+    // Bloxlink verification: members holding this role whose nickname is "Display (@username)" are linked to that
+    // Roblox account (roblox/verified.js). null = off (only links made in the game)
+    verifiedRoleId: { type: String, default: null },
     nicknameEnabled: { type: Boolean, default: true },
     nicknameFormat: { type: String, default: '{display} (@{username})' },
     bindings: { type: [robloxBindingSchema], default: [] },

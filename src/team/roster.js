@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { DiscordActivity, PlayerActivity, TeamMatch } from '../models/Activity.js';
 import { RobloxLink } from '../models/RobloxLink.js';
-import { getKnownGroupRoles } from '../roblox/api.js';
+import { getKnownGroupRoles, getRoleMembers } from '../roblox/api.js';
 
 // The Team tab and /inactive: everyone in each team group (Testers, Staff...), from the Roblox group's role lists and
 // the server's Discord roles, joined into one row per person, with when they last played and last chatted.
@@ -10,36 +10,10 @@ import { getKnownGroupRoles } from '../roblox/api.js';
 // (RobloxLink), someone matched them on the dashboard (TeamMatch), or the Discord name gives the Roblox username away
 // (Bloxlink-style nicknames: "Name (@username)", "username", "@username").
 
-const ROLE_MEMBERS_TTL_MS = 10 * 60 * 1000;
-const roleMembersCache = new Map(); // roleId -> { at, users }
 const MEMBERS_TTL_MS = 10 * 60 * 1000;
 const membersFetchedAt = new Map(); // guildId -> time
 
 export const ONLINE_MS = 8 * 60 * 1000; // (a game heartbeat comes every 5 minutes)
-
-async function getJson(url) {
-  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) });
-  if (!res.ok) throw new Error(`Roblox API ${res.status}`);
-  return res.json();
-}
-
-/** Every member holding a group role: [{ robloxId, username, displayName }]. Cached for 10 minutes. */
-export async function getRoleMembers(groupId, roleId) {
-  const cached = roleMembersCache.get(roleId);
-  if (cached && Date.now() - cached.at < ROLE_MEMBERS_TTL_MS) return cached.users;
-  const users = [];
-  let cursor = '';
-  for (let page = 0; page < 50; page += 1) {
-    const data = await getJson(
-      `https://groups.roblox.com/v1/groups/${groupId}/roles/${roleId}/users?limit=100&sortOrder=Asc${cursor ? `&cursor=${cursor}` : ''}`,
-    );
-    for (const u of data.data ?? []) users.push({ robloxId: u.userId, username: u.username, displayName: u.displayName });
-    if (!data.nextPageCursor) break;
-    cursor = encodeURIComponent(data.nextPageCursor);
-  }
-  roleMembersCache.set(roleId, { at: Date.now(), users });
-  return users;
-}
 
 /** Every server member (the Server Members intent), refetched at most every 10 minutes. */
 async function getMembers(guild) {

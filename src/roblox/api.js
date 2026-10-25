@@ -23,14 +23,52 @@ export async function getGroupRoles(groupId) {
   return roles;
 }
 
+// (A member's own roles: Roblox's per-user API, /v2/users/{id}/groups/roles, gives only the HIGHEST one of members
+// who hold several. Each role's member list below lists them under every role they hold, so roles come from those.)
+const ROLE_MEMBERS_TTL_MS = 10 * 60 * 1000;
+const roleMembersCache = new Map(); // roleId -> { at, users }
+
 /**
- * The member's HIGHEST role in the group ({ id, name, rank }), or null if they're not in it.
- * (Roblox's web API only returns the highest role of members who hold several.)
+ * Everyone holding a group role: [{ robloxId, username, displayName }]. Cached for 10 minutes; fresh = ask Roblox
+ * now (/update). The Team tab, and each linked member's roles (roblox/sync.js).
  */
-export async function getUserTopRole(userId, groupId) {
-  const data = await getJson(`https://groups.roblox.com/v2/users/${userId}/groups/roles`);
-  const entry = data.data?.find((d) => d.group?.id === groupId);
-  return entry ? { id: entry.role.id, name: entry.role.name, rank: entry.role.rank } : null;
+export async function getRoleMembers(groupId, roleId, { fresh = false } = {}) {
+  const cached = roleMembersCache.get(roleId);
+  if (!fresh && cached && Date.now() - cached.at < ROLE_MEMBERS_TTL_MS) return cached.users;
+  const users = [];
+  let cursor = '';
+  for (let page = 0; page < 50; page += 1) {
+    const data = await getJson(
+      `https://groups.roblox.com/v1/groups/${groupId}/roles/${roleId}/users?limit=100&sortOrder=Asc${cursor ? `&cursor=${cursor}` : ''}`,
+    );
+    for (const u of data.data ?? []) users.push({ robloxId: u.userId, username: u.username, displayName: u.displayName });
+    if (!data.nextPageCursor) break;
+    cursor = encodeURIComponent(data.nextPageCursor);
+  }
+  roleMembersCache.set(roleId, { at: Date.now(), users });
+  return users;
+}
+
+/**
+ * Roblox accounts by username, up to 100 per request: Map(lowercased username -> { robloxId, username,
+ * displayName }). Names Roblox doesn't know (or banned accounts) are missing from it.
+ */
+export async function resolveUsernames(usernames) {
+  const found = new Map();
+  const unique = [...new Set(usernames.map((u) => u.toLowerCase()))];
+  for (let i = 0; i < unique.length; i += 100) {
+    const res = await fetch('https://users.roblox.com/v1/usernames/users', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernames: unique.slice(i, i + 100), excludeBannedUsers: true }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`Roblox API ${res.status} for usernames`);
+    for (const u of (await res.json()).data ?? []) {
+      found.set(u.requestedUsername.toLowerCase(), { robloxId: u.id, username: u.name, displayName: u.displayName });
+    }
+  }
+  return found;
 }
 
 /** Remembers roles the game reported (private ones included), so the dashboard can offer them. */

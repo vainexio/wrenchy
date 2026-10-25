@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { useBot } from './appContext.js';
 import { DiscordPreview, PanelChannelCard, RoleChips, RoleOptions } from './PanelParts.jsx';
-import { Badge, Button, Card, Empty, Field, PageHead, PageSkeleton, SaveBar, Toggle, ago, useConfirm, useToast } from './ui.jsx';
+import { Badge, Button, Card, Empty, Field, Notice, PageHead, PageSkeleton, SaveBar, Toggle, ago, useConfirm, useToast } from './ui.jsx';
 import { useGuildEditor } from './useGuildEditor.js';
 
 function toForm(guild) {
@@ -16,6 +16,7 @@ function toForm(guild) {
     nicknameEnabled: rc.nicknameEnabled,
     nicknameFormat: rc.nicknameFormat,
     linkedRoleId: rc.linkedRoleId ?? '',
+    verifiedRoleId: rc.verifiedRoleId ?? '',
     bindings: rc.bindings.map((b) => ({ robloxRoleId: b.robloxRoleId, discordRoleIds: [...b.discordRoleIds] })),
   };
 }
@@ -55,22 +56,41 @@ function RobloxRoleSelect({ value, roles, taken, onChange }) {
   );
 }
 
+/** Bindings for the group roles that have a Discord role of the same name and no binding yet. */
+function sameNameBindings(groupRoles, discordRoles, bindings) {
+  const bound = new Set(bindings.map((b) => b.robloxRoleId));
+  const key = (name) => name.trim().toLowerCase();
+  const byName = new Map(discordRoles.filter((r) => !r.problem).map((r) => [key(r.name), r.id]));
+  return groupRoles
+    .filter((g) => g.rank > 1 && !bound.has(g.id) && byName.has(key(g.name)))
+    .map((g) => ({ robloxRoleId: g.id, discordRoleIds: [byName.get(key(g.name))] }));
+}
+
 function LinkedStaff({ overview, syncing, unlinking, onSync, onUnlink }) {
-  const { links } = overview;
+  // (everyone Bloxlink verified is linked: the list shows the ones holding a group role, and anyone linked in game)
+  const all = overview.links;
+  const links = all.filter((l) => l.roles.length || l.source === 'game');
+  const quiet = all.length - links.length;
   return (
     <Card
-      title="Linked staff"
-      description="Everyone who linked their Roblox account, with the group roles their Discord roles follow."
+      title="Linked members"
+      description={
+        <>
+          Everyone linked to a Roblox account, with the group roles their Discord roles follow. In Discord: <code>/update</code>{' '}
+          for one member, <code>/updateall</code> for everyone.
+        </>
+      }
       bodyClass=""
       aside={
-        <Button icon="refresh" loading={syncing} disabled={!links.length} onClick={onSync}>
-          Sync everyone
+        <Button icon="refresh" loading={syncing} onClick={onSync}>
+          Update everyone
         </Button>
       }
+      footer={quiet ? <span className="subtle">{quiet} more linked member{quiet === 1 ? '' : 's'} with no group role.</span> : undefined}
     >
       {!links.length ? (
-        <Empty icon="link" title="Nobody has linked yet">
-          Staff press the panel’s button in Discord to start.
+        <Empty icon="link" title="Nobody with a group role is linked yet">
+          Pick the Verified role above and press Update everyone, or staff press the link panel’s button.
         </Empty>
       ) : (
         <ul className="list">
@@ -84,6 +104,9 @@ function LinkedStaff({ overview, syncing, unlinking, onSync, onUnlink }) {
                     <a href={`https://www.roblox.com/users/${l.robloxId}/profile`} target="_blank" rel="noreferrer">
                       @{l.username}
                     </a>
+                    <Badge title={l.source === 'game' ? 'Linked with /link in the game' : 'From their Verified role and Bloxlink nickname'}>
+                      {l.source === 'game' ? 'Game' : 'Bloxlink'}
+                    </Badge>
                     {!l.inServer && <Badge tone="warn">Not in this server</Badge>}
                   </div>
                   <div className="who-sub">
@@ -94,9 +117,15 @@ function LinkedStaff({ overview, syncing, unlinking, onSync, onUnlink }) {
               <span className="subtle" title={`Roles from the ${l.rolesFrom === 'game' ? 'game' : 'Roblox website'}`}>
                 Synced {ago(l.syncedAt) ?? 'never'}
               </span>
-              <Button size="sm" variant="ghost-danger" icon="x" loading={unlinking === l.discordId} onClick={() => onUnlink(l)}>
-                Unlink
-              </Button>
+              {l.source === 'game' ? (
+                <Button size="sm" variant="ghost-danger" icon="x" loading={unlinking === l.discordId} onClick={() => onUnlink(l)}>
+                  Unlink
+                </Button>
+              ) : (
+                <span className="subtle" title="A Bloxlink link follows the Verified role and the nickname: take the role off to unlink">
+                  Follows Verified
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -135,6 +164,7 @@ export default function RobloxEditor({ guildId, onError }) {
         ? 'The message can’t be empty'
         : null;
 
+  const savedVerified = guild.roblox.verifiedRoleId ?? '';
   const sample = overview?.links[0] ?? { username: 'juan123', displayName: 'Juan' };
   const nickPreview = form.nicknameFormat
     .replaceAll('{username}', sample.username)
@@ -146,10 +176,10 @@ export default function RobloxEditor({ guildId, onError }) {
     try {
       const d = await api(`/guilds/${guildId}/roblox/sync`, { method: 'POST' });
       setOverview(d);
-      toast({ title: `Synced ${d.linked} linked member${d.linked === 1 ? '' : 's'}`, text: `${d.changed} had roles changed.` });
+      toast({ title: `Updated ${d.checked} member${d.checked === 1 ? '' : 's'}`, text: `${d.linked} linked, ${d.changed} had roles changed, ${d.unlinked} unlinked.` });
     } catch (err) {
       onError(err);
-      toast({ tone: 'error', title: 'Sync failed', text: err.message });
+      toast({ tone: 'error', title: 'Update failed', text: err.message });
     } finally {
       setSyncing(false);
     }
@@ -187,12 +217,72 @@ export default function RobloxEditor({ guildId, onError }) {
 
       <div className="stack">
         <Card
+          title="Bloxlink verification"
+          description={
+            <>
+              Members with this role are linked from their Bloxlink nickname, <strong>Display (@username)</strong>: “vai (@VA1_N)”
+              links to VA1_N. They’re updated when they get the role or change their nickname, every 30 minutes, and with{' '}
+              <code>/update</code>. Lose the role and the bound roles come off.
+            </>
+          }
+        >
+          <Field label="Verified role">
+            <select value={form.verifiedRoleId} onChange={set('verifiedRoleId')}>
+              <option value="">Off (only links made in the game)</option>
+              {guild.roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  @{r.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {overview?.verified && savedVerified && form.verifiedRoleId === savedVerified && (
+            <p className="subtle">
+              {overview.verified.count} verified member{overview.verified.count === 1 ? '' : 's'}
+              {overview.verified.unreadable.length
+                ? `, ${overview.verified.unreadable.length} with a nickname that doesn’t name an account:`
+                : '.'}
+            </p>
+          )}
+          {overview?.verified?.unreadable.length > 0 && savedVerified && form.verifiedRoleId === savedVerified && (
+            <Notice tone="warn">
+              {overview.verified.unreadable
+                .slice(0, 12)
+                .map((m) => `${m.discordName}${m.nickname ? '' : ' (no nickname)'}`)
+                .join(', ')}
+              {overview.verified.unreadable.length > 12 ? ` and ${overview.verified.unreadable.length - 12} more` : ''}. Their
+              nickname needs to end in (@username): have them run Bloxlink’s /update.
+            </Notice>
+          )}
+        </Card>
+
+        <Card
           title="Role sync"
-          description="Matched by Roblox role ID, so reordering ranks never breaks a binding. Roles update when staff join the game and every 30 minutes."
+          description="Each Roblox group role gives its Discord roles; someone holding several group roles gets all of their bindings. Matched by role ID, so reordering ranks never breaks a binding."
           footer={
-            <Button icon="plus" onClick={() => setForm({ ...form, bindings: [...form.bindings, { robloxRoleId: 0, discordRoleIds: [] }] })}>
-              Add binding
-            </Button>
+            <div className="row">
+              <Button icon="plus" onClick={() => setForm({ ...form, bindings: [...form.bindings, { robloxRoleId: 0, discordRoleIds: [] }] })}>
+                Add binding
+              </Button>
+              {overview && (
+                <Button
+                  variant="ghost"
+                  icon="link"
+                  title="Adds a binding for every group role that has a Discord role of the same name"
+                  onClick={() => {
+                    const added = sameNameBindings(overview.groupRoles, guild.roles, form.bindings);
+                    if (!added.length) {
+                      toast({ title: 'Nothing to add', text: 'Every group role with a same-name Discord role is bound already.' });
+                      return;
+                    }
+                    setForm({ ...form, bindings: [...form.bindings, ...added] });
+                    toast({ title: `Added ${added.length} binding${added.length === 1 ? '' : 's'}`, text: 'Check them, then save.' });
+                  }}
+                >
+                  Bind same names
+                </Button>
+              )}
+            </div>
           }
         >
           {form.bindings.length === 0 ? (
