@@ -1,11 +1,10 @@
 import { EmbedBuilder, MessageFlags, SlashCommandBuilder, escapeMarkdown } from 'discord.js';
-import { config } from '../../config.js';
 import { getGuildConfig } from '../../models/GuildConfig.js';
 import { updateMember } from '../../roblox/verified.js';
 
 // /update [user]: rechecks one member's Roblox account and group roles right now and gives / takes their bound
-// Discord roles (roblox/verified.js). Anyone can update themselves; updating someone else needs the dashboard role.
-// The reply is private.
+// Discord roles (roblox/verified.js). Anyone can use it, on themselves or on anyone else, and the result is posted
+// in the channel for everyone to see (only the "can't do that" notices stay private).
 
 export const data = new SlashCommandBuilder()
   .setName('update')
@@ -42,16 +41,12 @@ export async function execute(interaction) {
     await interaction.reply({ content: 'That user isn’t in this server.', flags: MessageFlags.Ephemeral });
     return;
   }
-  if (target.id !== interaction.user.id && !interaction.member.roles.cache.has(config.adminRoleId)) {
-    await interaction.reply({ content: 'Only staff with the dashboard role can update someone else. Use `/update` on its own for yourself.', flags: MessageFlags.Ephemeral });
-    return;
-  }
   const gc = await getGuildConfig(interaction.guildId);
   if (!gc.roblox.enabled) {
     await interaction.reply({ content: 'Roblox Link is off on the dashboard.', flags: MessageFlags.Ephemeral });
     return;
   }
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await interaction.deferReply();
   const result = await updateMember(interaction.guild, gc.roblox, target);
   await interaction.editReply({ embeds: [describeUpdate(result)], allowedMentions: { parse: [] } });
 }
