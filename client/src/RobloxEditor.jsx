@@ -3,7 +3,7 @@ import { matchScore } from '../../src/shared/search.js';
 import { api } from './api.js';
 import { RoleChips, RoleOptions } from './PanelParts.jsx';
 import {
-  Badge, Button, Card, Empty, Field, FilterMenu, FilterSummary, Icon, PageHead, PageSkeleton, SaveBar, SearchInput, Toggle, ago, useToast,
+  Badge, Button, Card, Empty, Field, FilterMenu, FilterSummary, PageHead, PageSkeleton, SaveBar, SearchInput, Toggle, ago, useToast,
 } from './ui.jsx';
 import { useGuildEditor } from './useGuildEditor.js';
 import { useUrlState } from './urlState.js';
@@ -142,16 +142,8 @@ function Members({ filters, setFilters, overview, guildId, syncing, onSync, onOv
         </div>
       </div>
       <FilterSummary shown={shown.length} total={all.length} noun="members" chips={chips} onClear={clear}>
-        <label className="sort-select">
-          <Icon name="chevron" />
-          <select value={sort} onChange={(e) => setFilters({ sort: e.target.value })} aria-label="Sort by">
-            {SORTS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FilterMenu label="Sort" quiet anyLabel={null} align="end" value={sort} onChange={(v) => setFilters({ sort: v })}
+          options={SORTS.map(([v, l]) => ({ value: v, label: l }))} />
       </FilterSummary>
       {!all.length ? (
         <Empty icon="link" title="Nobody is linked yet">

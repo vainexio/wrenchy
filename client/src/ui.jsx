@@ -320,9 +320,10 @@ export function SearchList({ query, onQuery, placeholder, items, onPick, loading
 
 /**
  * A filter as a button that opens its choices: one (radio; '' = any) or several (`multi`, checkboxes). options:
- * [{ value, label, count? }]. Long lists get a search box.
+ * [{ value, label, count? }]. Long lists get a search box. anyLabel null = no "any" choice (a sort order); `quiet`
+ * doesn't highlight the button for having a choice.
  */
-export function FilterMenu({ label, options, value, onChange, multi = false, anyLabel = 'Any' }) {
+export function FilterMenu({ label, options, value, onChange, multi = false, anyLabel = 'Any', quiet = false, align }) {
   const [query, setQuery] = useState('');
   const selected = multi ? value : value ? [value] : [];
   const names = selected.map((v) => options.find((o) => o.value === v)?.label ?? v);
@@ -357,8 +358,9 @@ export function FilterMenu({ label, options, value, onChange, multi = false, any
   return (
     <Popover
       label={label}
+      align={align}
       trigger={(props) => (
-        <button type="button" className={`filter-btn${selected.length ? ' on' : ''}`} {...props}>
+        <button type="button" className={`filter-btn${quiet ? ' quiet' : selected.length ? ' on' : ''}`} {...props}>
           <span>{label}</span>
           {names.length > 0 && (
             <b>
@@ -372,13 +374,13 @@ export function FilterMenu({ label, options, value, onChange, multi = false, any
     >
       {(close) => (
         <div className="menu" role="menu" aria-label={label} onKeyDown={onKeyDown}>
-          {options.length > 8 && (
+          {options.length > 8 && !quiet && (
             <div className="menu-search">
               <SearchInput value={query} onChange={setQuery} placeholder={`Find a ${label.toLowerCase()}…`} />
             </div>
           )}
           <div className="menu-items">
-            {!multi && !query && item({ value: '', label: anyLabel }, !value, () => onChange(''), close)}
+            {!multi && !query && anyLabel !== null && item({ value: '', label: anyLabel }, !value, () => onChange(''), close)}
             {shown.map((o) => item(o, selected.includes(o.value), () => (multi ? toggle(o.value) : onChange(o.value)), close))}
             {!shown.length && <div className="searchlist-empty">Nothing called that</div>}
           </div>

@@ -481,16 +481,8 @@ function People({ data, guild, guildId, busy, filters, setFilters, onMatch, onUn
           </div>
         </div>
         <FilterSummary shown={shown.length} total={people.length} noun="people" chips={chips} onClear={clearFilters}>
-          <label className="sort-select">
-            <Icon name="chevron" />
-            <select value={sort} onChange={(e) => setFilters({ sort: e.target.value })} aria-label="Sort by">
-              {SORT_OPTIONS.map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
+          <FilterMenu label="Sort" quiet anyLabel={null} align="end" value={sort} onChange={(v) => setFilters({ sort: v })}
+            options={SORT_OPTIONS.map(([v, l]) => ({ value: v, label: l }))} />
           <Button
             variant="ghost"
             icon="download"

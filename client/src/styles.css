@@ -194,6 +194,7 @@ input, select { height: 38px; }
 textarea { resize: vertical; line-height: 1.45; }
 input:hover, textarea:hover, select:hover { border-color: var(--text-3); }
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+select option { background: var(--surface); color: var(--text); }
 input[type='color'] { padding: 3px; cursor: pointer; }
 input[type='number'] { max-width: 120px; }
 .invalid, .invalid:hover { border-color: var(--danger); }
@@ -304,7 +305,7 @@ input[type='number'] { max-width: 120px; }
 .menu { min-width: 240px; }
 .menu-search { padding: 8px 8px 0; }
 .menu-search input { height: 34px; }
-.menu-items { display: flex; flex-direction: column; padding: 6px; max-height: 320px; overflow-y: auto; }
+.menu-items { display: flex; flex-direction: column; padding: 6px; max-height: 400px; overflow-y: auto; }
 .menu-item {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 7px 8px; border: none; border-radius: 8px;
   background: none; color: var(--text); font: inherit; font-size: 0.88rem; font-weight: 500; cursor: pointer;
@@ -325,10 +326,10 @@ input[type='number'] { max-width: 120px; }
 .list-toolbar .search-input input { height: 34px; background: var(--surface-2); }
 .toolbar-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 #members { scroll-margin-top: 90px; }
-.sort-select { position: relative; display: inline-flex; align-items: center; }
-.sort-select select { height: 32px; width: auto; padding: 0 28px 0 10px; font-size: 0.82rem; font-weight: 600; appearance: none; background: transparent; border-color: transparent; color: var(--text-2); cursor: pointer; }
-.sort-select select:hover { border-color: var(--border-strong); color: var(--text); }
-.sort-select svg { position: absolute; right: 8px; width: 14px; height: 14px; color: var(--text-3); pointer-events: none; }
+.filter-btn.quiet { border-color: transparent; background: none; height: 32px; font-size: 0.82rem; }
+.filter-btn.quiet:hover, .filter-btn.quiet[aria-expanded='true'] { border-color: var(--border-strong); }
+.filter-btn.quiet span { color: var(--text-3); }
+.filter-btn.quiet span::after { content: ':'; }
 .filter-summary {
   display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-height: 42px; padding: 0 20px 8px; font-size: 0.84rem;
   color: var(--text-3); border-bottom: 1px solid var(--border);
