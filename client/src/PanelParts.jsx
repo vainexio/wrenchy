@@ -1,6 +1,7 @@
 // Building blocks shared by the panel editors: the Discord-style preview, role pickers, the panel channel card.
 import { useState } from 'react';
-import { Badge, Button, Card, Field, Icon, LinkButton } from './ui.jsx';
+import { rankByName } from '../../src/shared/search.js';
+import { Badge, Button, Card, Field, Icon, LinkButton, Popover, SearchList } from './ui.jsx';
 
 const CUSTOM_EMOJI = /^<(a?):(\w+):(\d+)>$/;
 
@@ -87,7 +88,39 @@ export function RoleOptions({ roles }) {
   ));
 }
 
-/** Multi-role picker: selected roles as removable chips, plus a dropdown to add more. */
+/** Type to find a role (in the order given: Discord's, highest first); the ones Wrenchy can't assign are greyed. */
+function RolePicker({ roles, onPick, close }) {
+  const [query, setQuery] = useState('');
+  const found = rankByName(roles, query, (r) => [r.name, r.id]).map((x) => x.item);
+  return (
+    <SearchList
+      query={query}
+      onQuery={setQuery}
+      placeholder="Find a role…"
+      items={found.map((r) => ({
+        key: r.id,
+        role: r,
+        disabled: Boolean(r.problem),
+        content: (
+          <div className="pick-row">
+            <span className="role-dot" style={{ background: r.color && r.color !== '#000000' ? r.color : undefined }} />
+            <span className="grow">
+              @{r.name}
+              {r.problem && <small>{r.problem}</small>}
+            </span>
+          </div>
+        ),
+      }))}
+      onPick={(it) => {
+        onPick(it.role.id);
+        close();
+      }}
+      empty={`No role called “${query}”`}
+    />
+  );
+}
+
+/** Multi-role picker: selected roles as removable chips, plus a searchable list to add more. */
 export function RoleChips({ roles, value, onChange, exclude = [], addLabel = 'Add role…' }) {
   const selected = value.map((id) => roles.find((r) => r.id === id) ?? { id, name: 'deleted role', problem: 'This role no longer exists' });
   const available = roles.filter((r) => !value.includes(r.id) && !exclude.includes(r.id));
@@ -102,10 +135,16 @@ export function RoleChips({ roles, value, onChange, exclude = [], addLabel = 'Ad
         </span>
       ))}
       {available.length > 0 && (
-        <select className="chip-add" value="" aria-label={addLabel} onChange={(e) => e.target.value && onChange([...value, e.target.value])}>
-          <option value="">+ {addLabel}</option>
-          <RoleOptions roles={available} />
-        </select>
+        <Popover
+          label={addLabel}
+          trigger={(props) => (
+            <button type="button" className="chip-add" {...props}>
+              + {addLabel.replace(/…$/, '')}
+            </button>
+          )}
+        >
+          {(close) => <RolePicker roles={available} onPick={(id) => onChange([...value, id])} close={close} />}
+        </Popover>
       )}
       {!selected.length && !available.length && <span className="subtle">No roles to pick</span>}
     </div>

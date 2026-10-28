@@ -6,6 +6,7 @@ import ReactionRolesEditor from './ReactionRolesEditor.jsx';
 import RobloxEditor from './RobloxEditor.jsx';
 import TeamEditor from './TeamEditor.jsx';
 import { Button, ConfirmProvider, Icon, Notice, PageSkeleton, ToastProvider, useConfirm } from './ui.jsx';
+import { clearParams } from './urlState.js';
 import VerificationEditor from './VerificationEditor.jsx';
 
 const TABS = [
@@ -34,11 +35,13 @@ function formatUptime(ms) {
 
 function readLoginError() {
   const code = new URLSearchParams(window.location.search).get('error');
-  if (code) window.history.replaceState(null, '', window.location.pathname);
+  if (code) clearParams();
   return code ? (LOGIN_ERRORS[code] ?? 'Login failed.') : null;
 }
 
 function readTab() {
+  const linked = new URLSearchParams(window.location.search).get('tab');
+  if (TABS.some((t) => t.id === linked)) return linked;
   try {
     const saved = localStorage.getItem(TAB_KEY);
     return TABS.some((t) => t.id === saved) ? saved : TABS[0].id;
@@ -145,6 +148,7 @@ function Dashboard({ status, statusError, user, setUser, setLoginError }) {
 
   const pickTab = (id) =>
     leaveTab(() => {
+      clearParams({ tab: id }); // (the last tab's search and filters don't apply here)
       setTab(id);
       try {
         localStorage.setItem(TAB_KEY, id);

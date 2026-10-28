@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { getGuildConfig } from '../models/GuildConfig.js';
 import { RobloxLink } from '../models/RobloxLink.js';
 import { getKnownGroupRoles } from '../roblox/api.js';
-import { isVerified, updateGuild } from '../roblox/verified.js';
+import { isVerified, updateGuild, updateMember } from '../roblox/verified.js';
 import { HttpError } from './errors.js';
 
 const MAX_BINDINGS = 50;
@@ -63,6 +63,22 @@ export async function applyRoblox(guild, guildConfig, body) {
 /** Updates everyone Verified or linked in one server (after settings change, or "Sync everyone"). */
 export async function syncGuild(guild, guildConfig, { fresh = false } = {}) {
   return updateGuild(guild, guildConfig.roblox, { fresh });
+}
+
+/** Updates one member now, like /update: { name, linkedTo, why, added, removed, problems } (role names). */
+export async function updateOne(guild, guildConfig, discordId) {
+  const member = await guild.members.fetch(String(discordId)).catch(() => null);
+  if (!member) throw new HttpError(400, 'That member is not in this server.');
+  const r = await updateMember(guild, guildConfig.roblox, member);
+  const names = (ids) => ids.map((id) => guild.roles.cache.get(id)?.name ?? 'deleted role');
+  return {
+    name: member.displayName,
+    linkedTo: r.link?.username ?? null,
+    why: r.link ? null : (r.why ?? null),
+    added: names(r.added),
+    removed: names(r.removed),
+    problems: r.problems,
+  };
 }
 
 /** The Roblox tab's live data: group roles, linked members, the Verified members it can't read. */

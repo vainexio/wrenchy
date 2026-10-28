@@ -1,4 +1,5 @@
-import { cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
+import { Fragment, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { matchScore } from '../../src/shared/search.js';
 
 // The dashboard's building blocks: icons, buttons that show they're working, fields with hints and counters, toasts
 // for every result, confirm dialogs (never the browser's), and the save bar that follows unsaved changes.
@@ -26,6 +27,8 @@ const PATHS = {
   game: 'M7 9v4 M5 11h4 M15 10h.01 M18 12h.01 M8 5h8a5 5 0 015 5v3a4 4 0 01-7 2.6L13 14h-2l-1 1.6A4 4 0 013 13v-3a5 5 0 015-5z',
   chat: 'M21 12a8 8 0 01-11.7 7.1L4 20l1.1-4.6A8 8 0 1121 12z',
   clock: 'M12 7v5l3 2 M12 21a9 9 0 100-18 9 9 0 000 18z',
+  chevron: 'M6 9l6 6 6-6',
+  download: 'M12 4v11 M7 10l5 5 5-5 M5 20h14',
 };
 
 export function Icon({ name, ...props }) {
@@ -123,6 +126,297 @@ export function Segmented({ value, options, onChange, label }) {
           {o.count !== undefined && <span className="seg-count">{o.count}</span>}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ search, pickers, filters
+/** `value`, once it has stopped changing for `ms`. */
+export function useDebounced(value, ms = 200) {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return settled;
+}
+
+/** A search box with a clear button. Esc clears it; with `shortcut`, pressing / anywhere on the page focuses it. */
+export function SearchInput({ value, onChange, placeholder = 'Search…', label, shortcut, className = '' }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!shortcut) return undefined;
+    const onKey = (e) => {
+      const t = e.target;
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+      e.preventDefault();
+      ref.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shortcut]);
+  return (
+    <div className={`search-input ${className}`}>
+      <Icon name="search" />
+      <input
+        ref={ref}
+        type="search"
+        value={value}
+        placeholder={placeholder}
+        aria-label={label ?? placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && value) {
+            e.stopPropagation();
+            onChange('');
+          }
+        }}
+      />
+      {shortcut && !value && <kbd aria-hidden="true">/</kbd>}
+      {value && (
+        <button
+          type="button"
+          className="search-clear"
+          aria-label="Clear search"
+          title="Clear search"
+          onClick={() => {
+            onChange('');
+            ref.current?.focus();
+          }}
+        >
+          <Icon name="x" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A button that opens a floating panel under it. `trigger(props)` renders the button (spread props onto it);
+ * `children(close)` the panel. Closes on Esc (focus goes back to the button) and on a click outside.
+ */
+export function Popover({ trigger, children, align = 'start', className = '', label }) {
+  const [open, setOpen] = useState(false);
+  const [side, setSide] = useState(align);
+  const box = useRef(null);
+  const button = useRef(null);
+  const panel = useRef(null);
+  // (one that would run off the screen opens to the other side)
+  useLayoutEffect(() => {
+    if (!open) return setSide(align);
+    const r = panel.current?.getBoundingClientRect();
+    if (!r || window.innerWidth <= 600) return undefined;
+    if (side === 'start' && r.right > window.innerWidth - 8) setSide('end');
+    else if (side === 'end' && r.left < 8) setSide('start');
+    return undefined;
+  }, [open, side]);
+  const close = useCallback(() => {
+    setOpen(false);
+    button.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (!open) return undefined;
+    const node = box.current;
+    const onDown = (e) => !node?.contains(e.target) && setOpen(false);
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      close();
+    };
+    document.addEventListener('mousedown', onDown);
+    node?.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      node?.removeEventListener('keydown', onKey);
+    };
+  }, [open, close]);
+  return (
+    <div className="popover-wrap" ref={box}>
+      {trigger({ ref: button, onClick: () => setOpen((o) => !o), 'aria-expanded': open, 'aria-haspopup': 'dialog' })}
+      {open && (
+        <div ref={panel} className={`popover ${side} ${className}`} role="dialog" aria-label={label}>
+          {children(close)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A search box over a list you pick from with the keyboard (↑ ↓ Enter; Esc closes the popover around it) or the
+ * mouse. items: [{ key, content, disabled?, section? }] in order; a new `section` starts a heading.
+ */
+export function SearchList({ query, onQuery, placeholder, items, onPick, loading, empty, footer }) {
+  const id = useId();
+  const listRef = useRef(null);
+  const enabled = items.flatMap((it, i) => (it.disabled ? [] : [i]));
+  const [active, setActive] = useState(enabled[0] ?? -1);
+  const signature = items.map((it) => `${it.key}${it.disabled ? '!' : ''}`).join('|');
+  useEffect(() => setActive(enabled[0] ?? -1), [signature]);
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
+  const move = (step) => {
+    if (!enabled.length) return;
+    const at = enabled.indexOf(active);
+    setActive(enabled[(at + step + enabled.length) % enabled.length]);
+  };
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      move(e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (items[active] && !items[active].disabled) onPick(items[active]);
+    }
+  };
+  return (
+    <div className="searchlist">
+      <div className="search-input">
+        <Icon name="search" />
+        <input
+          autoFocus
+          role="combobox"
+          aria-expanded="true"
+          aria-controls={`${id}-list`}
+          aria-autocomplete="list"
+          aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          onKeyDown={onKeyDown}
+        />
+        {loading && <span className="spinner" aria-label="Searching" />}
+      </div>
+      <ul className="searchlist-items" role="listbox" id={`${id}-list`} ref={listRef}>
+        {items.map((it, i) => (
+          <Fragment key={it.key}>
+            {it.section && it.section !== items[i - 1]?.section && (
+              <li className="searchlist-section" role="presentation">
+                {it.section}
+              </li>
+            )}
+            <li
+              id={`${id}-${i}`}
+              data-i={i}
+              role="option"
+              aria-selected={i === active}
+              aria-disabled={it.disabled || undefined}
+              className={`searchlist-item${i === active ? ' active' : ''}${it.disabled ? ' disabled' : ''}`}
+              onMouseMove={() => !it.disabled && i !== active && setActive(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => !it.disabled && onPick(it)}
+            >
+              {it.content}
+            </li>
+          </Fragment>
+        ))}
+      </ul>
+      {!items.length && !loading && empty && <div className="searchlist-empty">{empty}</div>}
+      {footer && <div className="searchlist-foot">{footer}</div>}
+    </div>
+  );
+}
+
+/**
+ * A filter as a button that opens its choices: one (radio; '' = any) or several (`multi`, checkboxes). options:
+ * [{ value, label, count? }]. Long lists get a search box.
+ */
+export function FilterMenu({ label, options, value, onChange, multi = false, anyLabel = 'Any' }) {
+  const [query, setQuery] = useState('');
+  const selected = multi ? value : value ? [value] : [];
+  const names = selected.map((v) => options.find((o) => o.value === v)?.label ?? v);
+  const shown = query ? options.filter((o) => matchScore([o.label], query) !== null) : options;
+  const toggle = (v) => onChange(selected.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
+  const onKeyDown = (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const items = [...e.currentTarget.querySelectorAll('.menu-item')];
+    const at = items.indexOf(document.activeElement);
+    items[(at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+  };
+  const item = (o, checked, onPick, close) => (
+    <button
+      key={o.value || 'any'}
+      type="button"
+      role={multi ? 'menuitemcheckbox' : 'menuitemradio'}
+      aria-checked={checked}
+      className={`menu-item${checked ? ' checked' : ''}`}
+      onClick={() => {
+        onPick();
+        if (!multi) close();
+      }}
+    >
+      <span className={multi ? 'check-box' : 'check-dot'} aria-hidden="true">
+        {checked && multi && <Icon name="check" />}
+      </span>
+      <span className="grow">{o.label}</span>
+      {o.count !== undefined && <span className="menu-count">{o.count}</span>}
+    </button>
+  );
+  return (
+    <Popover
+      label={label}
+      trigger={(props) => (
+        <button type="button" className={`filter-btn${selected.length ? ' on' : ''}`} {...props}>
+          <span>{label}</span>
+          {names.length > 0 && (
+            <b>
+              {names[0]}
+              {names.length > 1 ? ` +${names.length - 1}` : ''}
+            </b>
+          )}
+          <Icon name="chevron" />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div className="menu" role="menu" aria-label={label} onKeyDown={onKeyDown}>
+          {options.length > 8 && (
+            <div className="menu-search">
+              <SearchInput value={query} onChange={setQuery} placeholder={`Find a ${label.toLowerCase()}…`} />
+            </div>
+          )}
+          <div className="menu-items">
+            {!multi && !query && item({ value: '', label: anyLabel }, !value, () => onChange(''), close)}
+            {shown.map((o) => item(o, selected.includes(o.value), () => (multi ? toggle(o.value) : onChange(o.value)), close))}
+            {!shown.length && <div className="searchlist-empty">Nothing called that</div>}
+          </div>
+          {multi && selected.length > 0 && (
+            <div className="menu-foot">
+              <button type="button" className="link-btn" onClick={() => onChange([])}>
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+/** "Showing 12 of 80 people", each filter in use as a chip that removes it, Clear all, then `children` (sort...). */
+export function FilterSummary({ shown, total, noun, chips, onClear, children }) {
+  return (
+    <div className="filter-summary" aria-live="polite">
+      <span>
+        Showing <b>{shown}</b> of {total} {noun}
+      </span>
+      {chips.map((c) => (
+        <span key={c.key} className="chip">
+          {c.label}
+          <button type="button" aria-label={`Remove filter: ${c.label}`} title="Remove filter" onClick={c.onRemove}>
+            ✕
+          </button>
+        </span>
+      ))}
+      {chips.length > 1 && (
+        <button type="button" className="link-btn" onClick={onClear}>
+          Clear all
+        </button>
+      )}
+      {children && <div className="summary-tools">{children}</div>}
     </div>
   );
 }

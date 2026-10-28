@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { matchScore } from '../../src/shared/search.js';
 import { api } from './api.js';
 import { RoleChips, RoleOptions } from './PanelParts.jsx';
-import { Badge, Button, Card, Empty, Field, Notice, PageHead, PageSkeleton, SaveBar, Toggle, ago, useToast } from './ui.jsx';
+import {
+  Badge, Button, Card, Empty, Field, FilterMenu, FilterSummary, Icon, PageHead, PageSkeleton, SaveBar, SearchInput, Toggle, ago, useToast,
+} from './ui.jsx';
 import { useGuildEditor } from './useGuildEditor.js';
+import { useUrlState } from './urlState.js';
 
 // ROBLOX LINK (the owner, 2026-10-25: "bloxlink handles the linking, which is an external bot, u just base it on their
 // nicknames if they are verified and has the verified role"): pick the Verified role, bind Roblox group roles to
@@ -44,56 +48,160 @@ function sameNameBindings(groupRoles, discordRoles, bindings) {
     .map((g) => ({ robloxRoleId: g.id, discordRoleIds: [byName.get(key(g.name))] }));
 }
 
-function LinkedMembers({ overview, syncing, onSync }) {
-  // (everyone Bloxlink verified is linked: the list shows the ones holding a bound group role)
-  const all = overview.links;
-  const links = all.filter((l) => l.roles.length);
-  const quiet = all.length - links.length;
+// Members list: everyone linked, and the Verified members who can't be (their nickname names no account)
+const STATUSES = [
+  { value: 'roles', label: 'Linked, with group roles', test: (m) => m.linked && m.roles.length > 0 },
+  { value: 'noroles', label: 'Linked, no bound group role', test: (m) => m.linked && !m.roles.length },
+  { value: 'unreadable', label: 'Can’t be linked', test: (m) => !m.linked },
+  { value: 'away', label: 'Not in this server', test: (m) => m.linked && !m.inServer },
+];
+const SORTS = [
+  ['name', 'Name A–Z'], ['-name', 'Name Z–A'], ['rank', 'Highest group role'], ['updated', 'Updated most recently'], ['-updated', 'Updated longest ago'],
+];
+const SORT_KEYS = {
+  name: (m) => m.discordName.toLowerCase(),
+  rank: (m) => -Math.max(0, ...m.roles.map((r) => r.rank)),
+  updated: (m) => -(m.syncedAt ? new Date(m.syncedAt).getTime() : 0),
+};
+const MEMBER_FILTERS = { q: '', status: '', role: [], sort: 'name' };
+
+function membersOf(overview) {
+  return [
+    ...overview.links.map((l) => ({ ...l, linked: true })),
+    ...overview.verified.unreadable.map((u) => ({
+      ...u, linked: false, inServer: true, roles: [], robloxId: null, username: null, syncedAt: null,
+      why: u.nickname ? 'Their nickname has no Roblox username in it' : 'They have no nickname',
+    })),
+  ];
+}
+
+function Members({ filters, setFilters, overview, guildId, syncing, onSync, onOverview, onError }) {
+  const toast = useToast();
+  const [updating, setUpdating] = useState(null);
+  const { q, status, role, sort } = filters;
+  const all = useMemo(() => membersOf(overview), [overview]);
+  const tests = {
+    q: (m) => !q.trim() || matchScore([m.discordName, m.nickname, m.username, m.displayName, m.discordId, m.robloxId && String(m.robloxId)], q) !== null,
+    status: (m) => !status || STATUSES.find((s) => s.value === status)?.test(m),
+    role: (m) => !role.length || m.roles.some((r) => role.includes(r.name)),
+  };
+  const passes = (m, skip) => Object.entries(tests).every(([k, t]) => k === skip || t(m));
+  const countBy = (skip, test) => all.filter((m) => passes(m, skip) && test(m)).length;
+  const key = SORT_KEYS[sort.replace(/^-/, '')] ?? SORT_KEYS.name;
+  const dir = sort.startsWith('-') ? -1 : 1;
+  const shown = all
+    .filter((m) => passes(m))
+    .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0) * dir || a.discordName.localeCompare(b.discordName));
+  const roleNames = [...new Set(overview.links.flatMap((l) => l.roles.map((r) => r.name)))];
+  const chips = [
+    q.trim() && { key: 'q', label: `“${q.trim()}”`, onRemove: () => setFilters({ q: '' }) },
+    status && { key: 'status', label: STATUSES.find((s) => s.value === status)?.label ?? status, onRemove: () => setFilters({ status: '' }) },
+    ...role.map((r) => ({ key: `r${r}`, label: r, onRemove: () => setFilters({ role: role.filter((x) => x !== r) }) })),
+  ].filter(Boolean);
+  const clear = () => setFilters({ q: '', status: '', role: [] });
+
+  async function updateOne(m) {
+    setUpdating(m.discordId);
+    try {
+      const { result: r, ...next } = await api(`/guilds/${guildId}/roblox/update/${m.discordId}`, { method: 'POST' });
+      onOverview(next);
+      const changes = [r.added.length && `Added ${r.added.join(', ')}.`, r.removed.length && `Removed ${r.removed.join(', ')}.`].filter(Boolean);
+      toast(
+        r.linkedTo
+          ? { title: `Updated ${r.name}`, text: [`Linked to @${r.linkedTo}.`, ...(changes.length ? changes : ['Roles already up to date.']), ...r.problems].join(' ') }
+          : { tone: 'error', title: `${r.name} isn’t linked`, text: r.why ?? 'Nothing links them to a Roblox account.' },
+      );
+    } catch (err) {
+      onError(err);
+      toast({ tone: 'error', title: 'Update failed', text: err.message });
+    } finally {
+      setUpdating(null);
+    }
+  }
+
   return (
     <Card
-      title="Linked members"
-      description={
-        <>
-          Verified members holding a bound group role, and the roles their Discord roles follow. In Discord: <code>/update</code>{' '}
-          for one member, <code>/updateall</code> for everyone.
-        </>
-      }
+      title="Members"
+      description="Everyone linked, and the Verified members who can’t be yet."
       bodyClass=""
       aside={
-        <Button icon="refresh" loading={syncing} onClick={onSync}>
+        <Button icon="refresh" loading={syncing} onClick={onSync} title="Recheck every Verified and linked member, like /updateall">
           Update everyone
         </Button>
       }
-      footer={quiet ? <span className="subtle">{quiet} more linked member{quiet === 1 ? '' : 's'} with no bound group role.</span> : undefined}
     >
-      {!links.length ? (
-        <Empty icon="link" title="Nobody with a bound group role is linked yet">
+      <div id="members" className="list-toolbar">
+        <SearchInput value={q} onChange={(v) => setFilters({ q: v })} placeholder="Search name, @username or ID…" label="Search members" shortcut className="grow" />
+        <div className="toolbar-group">
+          <FilterMenu label="Status" value={status} onChange={(v) => setFilters({ status: v })}
+            options={STATUSES.map((s) => ({ value: s.value, label: s.label, count: countBy('status', s.test) }))} />
+          {roleNames.length > 0 && (
+            <FilterMenu label="Group role" multi value={role} onChange={(v) => setFilters({ role: v })}
+              options={roleNames.map((r) => ({ value: r, label: r, count: countBy('role', (m) => m.roles.some((x) => x.name === r)) }))} />
+          )}
+        </div>
+      </div>
+      <FilterSummary shown={shown.length} total={all.length} noun="members" chips={chips} onClear={clear}>
+        <label className="sort-select">
+          <Icon name="chevron" />
+          <select value={sort} onChange={(e) => setFilters({ sort: e.target.value })} aria-label="Sort by">
+            {SORTS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </label>
+      </FilterSummary>
+      {!all.length ? (
+        <Empty icon="link" title="Nobody is linked yet">
           Pick the Verified role and the bindings above, save, then press Update everyone.
+        </Empty>
+      ) : !shown.length ? (
+        <Empty icon="search" title="Nobody matches">
+          <Button size="sm" onClick={clear}>
+            Clear filters
+          </Button>
         </Empty>
       ) : (
         <ul className="list">
-          {links.map((l) => (
-            <li key={l.discordId}>
+          {shown.map((m) => (
+            <li key={m.discordId}>
               <div className="who">
-                {l.discordAvatar ? <img className="avatar-sm" src={l.discordAvatar} alt="" /> : <span className="avatar-sm">?</span>}
+                {m.discordAvatar ? <img className="avatar-sm" src={m.discordAvatar} alt="" /> : <span className="avatar-sm">{m.discordName[0]}</span>}
                 <div className="grow">
                   <div className="who-names">
-                    <strong>{l.discordName}</strong>
-                    <a href={`https://www.roblox.com/users/${l.robloxId}/profile`} target="_blank" rel="noreferrer">
-                      @{l.username}
-                    </a>
-                    {!l.inServer && <Badge tone="warn">Not in this server</Badge>}
+                    <strong>{m.discordName}</strong>
+                    {m.username && (
+                      <a href={`https://www.roblox.com/users/${m.robloxId}/profile`} target="_blank" rel="noreferrer">
+                        @{m.username}
+                      </a>
+                    )}
+                    {!m.inServer && <Badge tone="warn">Not in this server</Badge>}
+                    {!m.linked && <Badge tone="bad">Can’t be linked</Badge>}
                   </div>
                   <div className="who-sub">
-                    {l.roles.map((r) => (
+                    {m.roles.map((r) => (
                       <span key={r.id} className="pill">
                         {r.name}
                       </span>
                     ))}
+                    {m.linked && !m.roles.length && <span className="subtle">No bound group role</span>}
+                    {!m.linked && (
+                      <span className="subtle">
+                        {m.why}
+                        {m.nickname ? ` (“${m.nickname}”)` : ''}. Bloxlink’s /update sets it.
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
-              <span className="subtle">Updated {ago(l.syncedAt) ?? 'never'}</span>
+              {m.linked && <span className="subtle">Updated {ago(m.syncedAt) ?? 'never'}</span>}
+              {m.inServer && (
+                <Button size="sm" icon="refresh" loading={updating === m.discordId} disabled={Boolean(updating) && updating !== m.discordId} onClick={() => updateOne(m)} title="Recheck their nickname and group roles now, like /update">
+                  Update
+                </Button>
+              )}
             </li>
           ))}
         </ul>
@@ -108,6 +216,7 @@ export default function RobloxEditor({ guildId, onError }) {
   const { guild, form, setForm, dirty, busy, nudge } = editor;
   const [overview, setOverview] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [memberFilters, setMemberFilters] = useUrlState(MEMBER_FILTERS);
 
   useEffect(() => {
     api(`/guilds/${guildId}/roblox`).then(setOverview).catch(onError);
@@ -149,16 +258,7 @@ export default function RobloxEditor({ guildId, onError }) {
       </PageHead>
 
       <div className="stack">
-        <Card
-          title="Bloxlink verification"
-          description={
-            <>
-              Members with this role are linked to the Roblox username in their nickname, whatever the format: “vai (@VA1_N)”,
-              “VA1_N” and “vai | VA1_N” all link to VA1_N. They’re updated when they get the role or change their nickname, and
-              with <code>/update</code> and <code>/updateall</code>. Lose the role and the bound roles come off.
-            </>
-          }
-        >
+        <Card title="Bloxlink verification" description="Members with this role are linked to the Roblox username in their nickname.">
           <Field label="Verified role">
             <select value={form.verifiedRoleId} onChange={set('verifiedRoleId')}>
               <option value="">Off (nobody is linked)</option>
@@ -170,29 +270,39 @@ export default function RobloxEditor({ guildId, onError }) {
             </select>
           </Field>
           {showCounts && (
-            <p className="subtle">
-              {overview.verified.count} verified member{overview.verified.count === 1 ? '' : 's'}
-              {overview.verified.unreadable.length
-                ? `, ${overview.verified.unreadable.length} not linked:`
-                : '.'}
+            <div className="row counts">
+              <Badge tone="ok" dot>{overview.links.length} linked</Badge>
+              {overview.verified.unreadable.length > 0 && (
+                <Badge tone="bad" dot>{overview.verified.unreadable.length} can’t be linked</Badge>
+              )}
+              {overview.verified.unreadable.length > 0 && (
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => {
+                    setMemberFilters({ status: 'unreadable' });
+                    document.getElementById('members')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  Show who and why
+                </button>
+              )}
+            </div>
+          )}
+          <details className="howto">
+            <summary>How linking works</summary>
+            <p>
+              The nickname just needs the Roblox username in it, whatever the format: “vai (@VA1_N)”, “VA1_N” and “vai | VA1_N” all
+              link to VA1_N. Members are updated when they get the role or change their nickname, with <code>/update</code> (one
+              member) and <code>/updateall</code> (everyone) in Discord, and with the Update buttons below. Lose the role and the
+              bound roles come off.
             </p>
-          )}
-          {showCounts && overview.verified.unreadable.length > 0 && (
-            <Notice tone="warn">
-              {overview.verified.unreadable
-                .slice(0, 12)
-                .map((m) => `${m.discordName}${m.nickname ? '' : ' (no nickname)'}`)
-                .join(', ')}
-              {overview.verified.unreadable.length > 12 ? ` and ${overview.verified.unreadable.length - 12} more` : ''}. Their
-              nickname needs their Roblox username in it (Bloxlink’s /update sets it), then press Update everyone.
-              <code>/update</code> on one of them says what’s wrong.
-            </Notice>
-          )}
+          </details>
         </Card>
 
         <Card
           title="Role sync"
-          description="Each Roblox group role gives its Discord roles; someone holding several group roles gets all of their bindings. Matched by role ID, so reordering ranks never breaks a binding."
+          description="Each Roblox group role gives its Discord roles. Holding several group roles gives all of their bindings."
           footer={
             <div className="row">
               <Button icon="plus" onClick={() => setForm({ ...form, bindings: [...form.bindings, { robloxRoleId: 0, discordRoleIds: [] }] })}>
@@ -260,7 +370,11 @@ export default function RobloxEditor({ guildId, onError }) {
           </Field>
         </Card>
 
-        {overview ? <LinkedMembers overview={overview} syncing={syncing} onSync={syncAll} /> : <div className="skeleton" style={{ height: 160 }} />}
+        {overview ? (
+          <Members filters={memberFilters} setFilters={setMemberFilters} overview={overview} guildId={guildId} syncing={syncing} onSync={syncAll} onOverview={setOverview} onError={onError} />
+        ) : (
+          <div className="skeleton" style={{ height: 160 }} />
+        )}
       </div>
 
       <SaveBar dirty={dirty} busy={busy} blocked={blocked} nudge={nudge} onSave={() => editor.onSave(form)} onDiscard={editor.discard} />

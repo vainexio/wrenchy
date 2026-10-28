@@ -16,7 +16,7 @@ const membersFetchedAt = new Map(); // guildId -> time
 export const ONLINE_MS = 8 * 60 * 1000; // (a game heartbeat comes every 5 minutes)
 
 /** Every server member (the Server Members intent), refetched at most every 10 minutes. */
-async function getMembers(guild) {
+export async function getMembers(guild) {
   const at = membersFetchedAt.get(guild.id) ?? 0;
   if (Date.now() - at > MEMBERS_TTL_MS || guild.members.cache.size < guild.memberCount * 0.9) {
     await guild.members.fetch();

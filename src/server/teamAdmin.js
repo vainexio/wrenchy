@@ -1,13 +1,55 @@
 import { config } from '../config.js';
 import { TeamMatch } from '../models/Activity.js';
 import { getGuildConfig } from '../models/GuildConfig.js';
+import { RobloxLink } from '../models/RobloxLink.js';
 import { getKnownGroupRoles } from '../roblox/api.js';
+import { rankByName } from '../shared/search.js';
 import { scanHistory, scans } from '../team/discordActivity.js';
-import { buildTeam, gameTrackingSince } from '../team/roster.js';
+import { buildTeam, gameTrackingSince, getMembers } from '../team/roster.js';
 import { HttpError } from './errors.js';
 import { gameStatus } from './game.js';
 
 const MAX_GROUPS = 8;
+const SEARCH_LIMIT = 25;
+
+/**
+ * Server members whose username, display name, nickname or ID matches `q`, best first (the Match Discord picker):
+ * { results: [{ id, username, globalName, nickname, displayName, avatar, roles, linkedTo, matched }], total }.
+ * Searched here so the dashboard never loads the whole member list.
+ */
+export async function searchMembers(guild, q, limit) {
+  const query = String(q ?? '').trim().slice(0, 100);
+  if (!query) return { results: [], total: 0 };
+  const members = [...(await getMembers(guild)).values()].filter((m) => !m.user.bot);
+  const ranked = rankByName(members, query, (m) => [m.user.username, m.user.globalName, m.nickname, m.displayName, m.id]);
+  const top = ranked.slice(0, Math.min(Math.max(Number(limit) || SEARCH_LIMIT, 1), 50)).map((r) => r.item);
+  const ids = top.map((m) => m.id);
+  const [links, matches] = await Promise.all([
+    RobloxLink.find({ discordId: { $in: ids } }, { discordId: 1, username: 1 }).lean(),
+    TeamMatch.find({ discordId: { $in: ids } }, { discordId: 1 }).lean(),
+  ]);
+  const linkOf = new Map(links.map((l) => [l.discordId, l.username]));
+  const matched = new Set(matches.map((m) => m.discordId));
+  return {
+    total: ranked.length,
+    results: top.map((m) => ({
+      id: m.id,
+      username: m.user.username,
+      globalName: m.user.globalName ?? null,
+      nickname: m.nickname ?? null,
+      displayName: m.displayName,
+      avatar: m.user.displayAvatarURL({ size: 64 }),
+      // (their highest few roles, to tell people with the same name apart)
+      roles: m.roles.cache
+        .filter((r) => r.id !== guild.id)
+        .sort((a, b) => b.position - a.position)
+        .first(3)
+        .map((r) => r.name),
+      linkedTo: linkOf.get(m.id) ?? null,
+      matched: matched.has(m.id),
+    })),
+  };
+}
 
 /** The Team tab: its settings, every group's people and activity, the history scan's progress. */
 export async function teamOverview(guild) {

@@ -7,8 +7,8 @@ import { getGuildConfig } from '../models/GuildConfig.js';
 import { VerificationLog } from '../models/Verification.js';
 import { listAnnouncements, sendAnnouncement } from './announcements.js';
 import { HttpError } from './errors.js';
-import { applyRoblox, robloxOverview, syncGuild } from './robloxAdmin.js';
-import { matchMember, saveTeam, startScan, teamOverview } from './teamAdmin.js';
+import { applyRoblox, robloxOverview, syncGuild, updateOne } from './robloxAdmin.js';
+import { matchMember, saveTeam, searchMembers, startScan, teamOverview } from './teamAdmin.js';
 
 const PANEL_CHANNEL_TYPES = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
 const CREATE_DEFAULT_ROLE = '__create__';
@@ -214,6 +214,13 @@ export function createApiRouter(client, auth) {
     res.json({ ...result, notLinked: result.notLinked.length, ...(await robloxOverview(client, guild)) });
   });
 
+  // Updates one member now, like /update
+  router.post('/guilds/:guildId/roblox/update/:discordId', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const result = await updateOne(guild, await getGuildConfig(guild.id), req.params.discordId);
+    res.json({ result, ...(await robloxOverview(client, guild)) });
+  });
+
   // Team activity: who of the testers / staff last played and last chatted, and when
   router.get('/guilds/:guildId/team', async (req, res) => {
     const guild = getGuild(client, req.params.guildId);
@@ -224,6 +231,12 @@ export function createApiRouter(client, auth) {
     const guild = getGuild(client, req.params.guildId);
     await saveTeam(guild, req.body ?? {});
     res.json(await teamOverview(guild));
+  });
+
+  // Searches the server's members by name or ID (the dashboard's member pickers)
+  router.get('/guilds/:guildId/members', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await searchMembers(guild, req.query.q, req.query.limit));
   });
 
   router.put('/guilds/:guildId/team/match', async (req, res) => {
