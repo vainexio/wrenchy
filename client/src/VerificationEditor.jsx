@@ -29,7 +29,7 @@ export default function VerificationEditor({ guildId, onError }) {
     <>
       <PageHead
         title="Verification"
-        description="New members press a button to verify and get the main role, which unlocks the rest of the server."
+        description="New members press a button to get the main role and unlock the server."
       >
         <Badge>{guild.verifiedCount.toLocaleString()} verified</Badge>
         <Toggle
@@ -52,7 +52,7 @@ export default function VerificationEditor({ guildId, onError }) {
           </Field>
           <Field
             label="Extra roles"
-            hint="Given at the same time. Members can remove them later (with reaction roles) and won’t get them back by verifying again."
+            hint="Given at the same time. Members can remove them later."
           >
             <RoleChips
               roles={guild.roles}

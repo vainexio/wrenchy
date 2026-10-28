@@ -56,7 +56,7 @@ export default function ReactionRolesEditor({ guildId, onError }) {
 
   return (
     <>
-      <PageHead title="Reaction Roles" description="A panel of buttons where members pick their own roles: one click adds the role, another removes it.">
+      <PageHead title="Reaction Roles" description="Buttons where members pick their own roles. Click once to add, again to remove.">
         <Toggle checked={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} label={form.enabled ? 'On' : 'Off'} />
       </PageHead>
 

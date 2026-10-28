@@ -172,7 +172,6 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', label,
           }
         }}
       />
-      {shortcut && !value && <kbd aria-hidden="true">/</kbd>}
       {value && (
         <button
           type="button"
@@ -606,10 +605,7 @@ export function SaveBar({ dirty, busy, blocked, onSave, onDiscard, nudge }) {
     <div className={`savebar${shake ? ' shake' : ''}`} role="region" aria-label="Unsaved changes">
       <div className="savebar-text">
         <span className="status-dot" />
-        <span>
-          {blocked ? blocked : 'You have unsaved changes'}
-          {!blocked && <small> · Ctrl+S to save</small>}
-        </span>
+        <span>{blocked ?? 'You have unsaved changes'}</span>
       </div>
       <Button variant="ghost" disabled={busy} onClick={onDiscard}>
         Discard

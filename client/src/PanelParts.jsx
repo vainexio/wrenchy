@@ -164,7 +164,7 @@ export function PanelChannelCard({ editor, onPost, what = 'panel' }) {
   return (
     <Card
       title="Post in Discord"
-      description={`Wrenchy posts the ${what} in this channel. Posting again moves it there and removes the old one.`}
+      description={`Where Wrenchy posts the ${what}. Posting again replaces the old one.`}
       aside={
         panelUrl ? (
           <Badge tone="ok" dot>

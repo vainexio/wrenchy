@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, AuthError } from './api.js';
 import AnnouncementEditor from './AnnouncementEditor.jsx';
 import { AppContext } from './appContext.js';
+import studioArt from './assets/piyesa-studios.webp';
 import ReactionRolesEditor from './ReactionRolesEditor.jsx';
 import RobloxEditor from './RobloxEditor.jsx';
 import TeamEditor from './TeamEditor.jsx';
@@ -25,14 +26,6 @@ const LOGIN_ERRORS = {
   oauth_failed: 'Discord login failed. Please try again.',
 };
 
-function formatUptime(ms) {
-  const s = Math.floor(ms / 1000);
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return [d && `${d}d`, (d || h) && `${h}h`, `${m}m`].filter(Boolean).join(' ');
-}
-
 function readLoginError() {
   const code = new URLSearchParams(window.location.search).get('error');
   if (code) clearParams();
@@ -50,16 +43,21 @@ function readTab() {
   }
 }
 
-function BotBadge({ bot, statusError, status }) {
+/** Wrenchy is online / offline, in words. */
+function botState(bot, status, statusError) {
+  return statusError ?? (bot ? 'Wrenchy is online' : status ? 'Wrenchy is offline' : 'Connecting…');
+}
+
+/** The studio's card at the top of the sidebar: its art, its name, and whether Wrenchy is online. */
+function Studio({ bot, status, statusError }) {
   return (
-    <div className="brand">
-      {bot?.avatar ? <img src={bot.avatar} alt="" /> : <span className="brand-icon">🔧</span>}
-      <div className="grow">
-        <div className="brand-name">{bot?.tag?.split('#')[0] ?? 'Wrenchy'}</div>
-        <div className="brand-status">
-          <span className={`status-dot ${bot ? 'ok' : 'bad'}`} />
-          {statusError ?? (bot ? 'Online' : status ? 'Bot offline' : 'Connecting…')}
-        </div>
+    <div className="studio">
+      <img className="studio-art" src={studioArt} alt="" />
+      <div className="studio-text">
+        <b>Piyesa Studios</b>
+        <span>
+          <span className={`status-dot ${bot ? 'ok' : 'bad'}`} /> {botState(bot, status, statusError)}
+        </span>
       </div>
     </div>
   );
@@ -68,20 +66,20 @@ function BotBadge({ bot, statusError, status }) {
 function Login({ bot, status, statusError, error }) {
   return (
     <main className="login-page">
-      <section className="card login-card">
-        {bot?.avatar ? <img className="brand-logo" src={bot.avatar} alt="" /> : <span className="brand-logo">🔧</span>}
+      <img className="login-art" src={studioArt} alt="" />
+      <section className="login-card">
+        <img className="login-thumb" src={studioArt} alt="" />
         <div>
-          <h1>{bot?.tag?.split('#')[0] ?? 'Wrenchy'} dashboard</h1>
-          <p className="muted" style={{ margin: '6px 0 0' }}>
-            For Piyesa staff. Log in with Discord; only members with the dashboard role get in.
-          </p>
+          <span className="eyebrow">Piyesa Studios</span>
+          <h1>Wrenchy dashboard</h1>
+          <p className="muted">For the Piyesa team. Log in with Discord to manage the server.</p>
         </div>
         {error && <Notice tone="error">{error}</Notice>}
         <a className="btn discord" href="/api/auth/login">
           Log in with Discord
         </a>
         <span className="subtle">
-          <span className={`status-dot ${bot ? 'ok' : 'bad'}`} /> {statusError ?? (bot ? 'Bot online' : status ? 'Bot offline' : 'Connecting…')}
+          <span className={`status-dot ${bot ? 'ok' : 'bad'}`} /> {botState(bot, status, statusError)}
         </span>
       </section>
     </main>
@@ -165,30 +163,22 @@ function Dashboard({ status, statusError, user, setUser, setLoginError }) {
 
   const context = useMemo(() => ({ bot, report, nudge }), [bot, report, nudge]);
   const current = TABS.find((t) => t.id === tab) ?? TABS[0];
-  const guild = guilds.find((g) => g.id === guildId);
 
   return (
     <AppContext.Provider value={context}>
       <div className="shell">
         <aside className="sidebar">
-          <BotBadge bot={bot} status={status} statusError={statusError} />
-          {guilds.length > 0 && (
+          <Studio bot={bot} status={status} statusError={statusError} />
+          {guilds.length > 1 && (
             <div className="server-switch">
               <label htmlFor="server">Server</label>
-              {guilds.length > 1 ? (
-                <select id="server" value={guildId ?? ''} onChange={(e) => leaveTab(() => setGuildId(e.target.value))}>
-                  {guilds.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div className="server-one">
-                  {guild?.icon ? <img src={guild.icon} alt="" /> : <span className="guild-icon">{guild?.name[0]}</span>}
-                  {guild?.name}
-                </div>
-              )}
+              <select id="server" value={guildId ?? ''} onChange={(e) => leaveTab(() => setGuildId(e.target.value))}>
+                {guilds.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
           <nav className="nav" aria-label="Dashboard sections">
@@ -206,32 +196,10 @@ function Dashboard({ status, statusError, user, setUser, setLoginError }) {
               </button>
             ))}
           </nav>
-          <div className="sidebar-foot">
-            {status && (
-              <div className="vitals">
-                <div className="vital">
-                  <b>{status.totalVerified.toLocaleString()}</b>
-                  <span>Verified</span>
-                </div>
-                <div className="vital">
-                  <b>{bot ? `${bot.ping}ms` : '—'}</b>
-                  <span>Ping</span>
-                </div>
-                <div className="vital">
-                  <b>{bot ? formatUptime(bot.uptime) : '—'}</b>
-                  <span>Uptime</span>
-                </div>
-                <div className="vital">
-                  <b>{status.database === 'connected' ? 'OK' : 'Down'}</b>
-                  <span>Database</span>
-                </div>
-              </div>
-            )}
-            <div className="me">
-              <img src={user.avatar} alt="" />
-              <span className="me-name grow">{user.name}</span>
-              <Button variant="ghost" size="sm" icon="logout" title="Log out" onClick={() => leaveTab(logout)} />
-            </div>
+          <div className="me">
+            <img src={user.avatar} alt="" />
+            <span className="me-name grow">{user.name}</span>
+            <Button variant="ghost" size="sm" icon="logout" title="Log out" onClick={() => leaveTab(logout)} />
           </div>
         </aside>
 

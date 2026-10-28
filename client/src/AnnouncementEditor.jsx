@@ -143,7 +143,7 @@ export default function AnnouncementEditor({ guildId, onError }) {
 
   return (
     <>
-      <PageHead title="Announcements" description="Send a message or an embed from Wrenchy to any channel. Your draft is kept in this browser until you send it.">
+      <PageHead title="Announcements" description="Send a message or an embed from Wrenchy to any channel. Drafts are kept until you send them.">
         <Segmented
           label="Message type"
           value={form.mode}

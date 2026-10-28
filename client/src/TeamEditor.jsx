@@ -321,7 +321,10 @@ function Actions({ p, guildId, spare, spareRoblox, busy, onMatch, onUnmatch }) {
 function Person({ p, channels, showGroups, ...actions }) {
   const name = p.discordName ?? p.displayName ?? p.username;
   const account = ACCOUNTS[p.account];
+  const missing = account.icon === 'alert';
   const status = statusLabel(p);
+  const roles = [...new Set([...p.robloxRoles, ...p.discordRoles])].filter((r) => !p.groups.includes(r));
+  const details = [...(showGroups ? p.groups : []), ...roles].join(' · ');
   return (
     <div className="team-row">
       <div className="who">
@@ -334,17 +337,17 @@ function Person({ p, channels, showGroups, ...actions }) {
                 @{p.username}
               </a>
             )}
-          </div>
-          <div className="who-sub">
-            {showGroups && p.groups.map((g) => <span key={g} className="pill group">{g}</span>)}
-            {[...new Set([...p.robloxRoles, ...p.discordRoles])].map((r) => (
-              <span key={r} className="pill">
-                {r}
+            {!missing && (
+              <span className="joined" title={account.hint ? `${account.label}: ${account.hint.toLowerCase()}` : account.label}>
+                <Icon name="link" />
+                <span className="sr-only">{account.label}</span>
               </span>
-            ))}
+            )}
           </div>
-          <div className={`account ${p.account}`} title={account.hint}>
-            <Icon name={account.icon} width="12" height="12" /> {account.label}
+          <div className="who-sub" title={details}>
+            {missing && <span className="warn-text">{account.label}</span>}
+            {missing && details && ' · '}
+            {details}
           </div>
         </div>
       </div>
@@ -623,7 +626,7 @@ function Tracking({ data, scanning, onScan }) {
       }
       aside={
         !game.keySet ? (
-          <Badge tone="bad" dot>No GAME_API_KEY</Badge>
+          <Badge tone="bad" dot>Game not connected</Badge>
         ) : game.lastSeenAt ? (
           <Badge tone="ok" dot>Game connected {ago(game.lastSeenAt)}</Badge>
         ) : (
@@ -738,7 +741,7 @@ export default function TeamEditor({ guildId, onError }) {
   const view = filters.view === 'settings' ? 'settings' : 'people';
   return (
     <>
-      <PageHead title="Team" description="Who of your testers and staff is playing and chatting, and who’s gone quiet.">
+      <PageHead title="Team" description="See who’s playing, who’s chatting, and who’s gone quiet.">
         <span className="subtle" title={loadedAt?.toLocaleTimeString()}>
           Updated {ago(loadedAt)}
         </span>

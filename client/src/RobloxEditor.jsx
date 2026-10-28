@@ -122,7 +122,7 @@ function Members({ filters, setFilters, overview, guildId, syncing, onSync, onOv
   return (
     <Card
       title="Members"
-      description="Everyone linked, and the Verified members who can’t be yet."
+      description="Everyone linked, and Verified members whose nickname needs fixing (Bloxlink’s /update sets it)."
       bodyClass=""
       aside={
         <Button icon="refresh" loading={syncing} onClick={onSync} title="Recheck every Verified and linked member, like /updateall">
@@ -178,25 +178,22 @@ function Members({ filters, setFilters, overview, guildId, syncing, onSync, onOv
                       </a>
                     )}
                     {!m.inServer && <Badge tone="warn">Not in this server</Badge>}
-                    {!m.linked && <Badge tone="bad">Can’t be linked</Badge>}
                   </div>
                   <div className="who-sub">
-                    {m.roles.map((r) => (
-                      <span key={r.id} className="pill">
-                        {r.name}
-                      </span>
-                    ))}
-                    {m.linked && !m.roles.length && <span className="subtle">No bound group role</span>}
-                    {!m.linked && (
-                      <span className="subtle">
-                        {m.why}
-                        {m.nickname ? ` (“${m.nickname}”)` : ''}. Bloxlink’s /update sets it.
-                      </span>
-                    )}
+                    {m.linked
+                      ? m.roles.length
+                        ? m.roles.map((r) => r.name).join(' · ')
+                        : 'No bound group role'
+                      : (
+                        <>
+                          <span className="warn-text">{m.why}</span>
+                          {m.nickname ? ` · “${m.nickname}”` : ''}
+                        </>
+                      )}
                   </div>
                 </div>
               </div>
-              {m.linked && <span className="subtle">Updated {ago(m.syncedAt) ?? 'never'}</span>}
+              {m.linked && <span className="subtle when-updated">Updated {ago(m.syncedAt) ?? 'never'}</span>}
               {m.inServer && (
                 <Button size="sm" icon="refresh" loading={updating === m.discordId} disabled={Boolean(updating) && updating !== m.discordId} onClick={() => updateOne(m)} title="Recheck their nickname and group roles now, like /update">
                   Update
