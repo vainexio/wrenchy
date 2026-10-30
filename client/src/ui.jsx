@@ -28,6 +28,7 @@ const PATHS = {
   chat: 'M21 12a8 8 0 01-11.7 7.1L4 20l1.1-4.6A8 8 0 1121 12z',
   clock: 'M12 7v5l3 2 M12 21a9 9 0 100-18 9 9 0 000 18z',
   chevron: 'M6 9l6 6 6-6',
+  ticket: 'M4 6h16v4a2 2 0 000 4v4H4v-4a2 2 0 000-4z M14 6v2 M14 11v2 M14 16v2',
   userPlus: 'M15 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1 M8.5 10a3 3 0 100-6 3 3 0 000 6z M19 8v6 M16 11h6',
   pause: 'M12 21a9 9 0 100-18 9 9 0 000 18z M10 9v6 M14 9v6',
   ban: 'M12 21a9 9 0 100-18 9 9 0 000 18z M5.6 5.6l12.8 12.8',
@@ -577,7 +578,7 @@ export function Check({ checked, indeterminate, onChange, label }) {
 }
 
 /** A dialog with anything in it (a form): Esc or a click outside closes it. `actions` are its buttons. */
-export function Modal({ title, children, actions, onClose }) {
+export function Modal({ title, children, actions, onClose, wide }) {
   const id = useId();
   const box = useRef(null);
   useEffect(() => {
@@ -588,7 +589,7 @@ export function Modal({ title, children, actions, onClose }) {
   }, []);
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={id} ref={box}>
+      <div className={`dialog${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={id} ref={box}>
         <h2 id={id}>{title}</h2>
         <div className="dialog-body">{children}</div>
         {actions && <div className="dialog-actions">{actions}</div>}

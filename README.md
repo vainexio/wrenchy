@@ -27,6 +27,16 @@ Configured from the dashboard's **Reaction Roles** tab:
 - Add up to 25 buttons, each with a role, label, and emoji. Pick an existing role or create a new one named after the label.
 - Reorder or remove buttons, turn the panel on/off, and post it in any channel
 
+### Tickets
+Private channels between a member and your staff, set up on the dashboard's **Tickets** tab:
+
+- **Ticket types** (Content creator application, General inquiry, Player report... one click to start from those): each with its own category, staff roles, button colour and emoji, a welcome message, an optional form of up to 5 questions asked before it opens, how many one member can have open, and how its channels are named: `cc-apps-{n}` gives `cc-apps-0001`, `cc-apps-0002`... (`{user}` adds their username; the next number can be set).
+- **Panels**: an embed with a button per type, or a dropdown, posted in any channel; saving updates posted panels in place.
+- **In a ticket**: Close (with a reason), Claim, Add user, Transcript; once closed: Reopen, Transcript, Delete. `/ticket add|remove|close|rename|claim|transcript` does the same. Closed tickets lock (members can read, not write) and can move to a closed category.
+- **Transcripts**: saved on close, posted in the transcript channel with who opened, claimed and closed it and why, DMed to the member, and readable on the dashboard (every ticket, with search and filters).
+
+Needs **Manage Channels**, **Manage Roles** and **Attach Files**, and the **Message Content Intent** on in the Developer Portal (Bot → Privileged Gateway Intents) for transcripts to include the messages' text. Wrenchy doesn't ask for it at login, so activity tracking still never sees what anyone says.
+
 ### Announcements
 Send a message from the bot to any channel from the **Announcements** tab:
 
@@ -80,6 +90,7 @@ The role is re-checked on every request, so removing it revokes access immediate
 ### Slash commands
 - `/ping`: checks if the bot is alive
 - `/inactive`: testers and staff who haven't played or chatted for a while
+- `/ticket`: add or remove someone, close, rename, claim or get the transcript of the ticket you're in
 
 ## Setup
 
@@ -91,7 +102,7 @@ The role is re-checked on every request, so removing it revokes access immediate
    - `https://<your-app>.onrender.com/api/auth/callback` (Render)
 
 ### Discord server
-1. Invite the bot (the link is printed in the console on startup). It needs **Manage Roles** and **Manage Nicknames**.
+1. Invite the bot (the link is printed in the console on startup). It needs **Manage Roles**, **Manage Nicknames** and **Manage Channels** (tickets).
 2. In **Server Settings → Roles**, keep Wrenchy's role **above** `Talyerista`.
 3. Hide your channels from `@everyone` and allow `Talyerista` to view them. Keep the verification channel visible to `@everyone`.
 4. Open the dashboard, pick the channel, and click **Post panel**.

@@ -9,6 +9,7 @@ import { listAnnouncements, sendAnnouncement } from './announcements.js';
 import { HttpError } from './errors.js';
 import { applyRoblox, robloxOverview, syncGuild, updateOne } from './robloxAdmin.js';
 import { matchMember, saveTeam, searchMembers, startScan, teamOverview } from './teamAdmin.js';
+import { listTickets, postPanel as postTicketPanel, saveTickets, ticketTranscript, ticketsOverview } from './tickets.js';
 import {
   addMember, changeRole, listNotices, listRecords, lookupRoblox, rankingInfo, reinstate, sendNotice, takeOff,
 } from './teamManage.js';
@@ -246,6 +247,34 @@ export function createApiRouter(client, auth) {
     const guild = getGuild(client, req.params.guildId);
     await matchMember(guild, req.body ?? {});
     res.json(await teamOverview(guild));
+  });
+
+  // Tickets: types, panels and settings; posting a panel; the tickets and their transcripts
+  router.get('/guilds/:guildId/tickets/config', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await ticketsOverview(guild));
+  });
+
+  router.put('/guilds/:guildId/tickets/config', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const { warnings } = await saveTickets(guild, req.body ?? {});
+    res.json({ warnings, ...(await ticketsOverview(guild)) });
+  });
+
+  router.post('/guilds/:guildId/tickets/panels/:panelId/post', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    await postTicketPanel(guild, req.params.panelId, req.body?.channelId);
+    res.json(await ticketsOverview(guild));
+  });
+
+  router.get('/guilds/:guildId/tickets', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await listTickets(guild));
+  });
+
+  router.get('/guilds/:guildId/tickets/:ticketId', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await ticketTranscript(guild, req.params.ticketId));
   });
 
   // Managing the team: the Roblox bot account, adding, role changes, suspending / removing, records, notices

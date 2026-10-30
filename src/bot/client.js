@@ -2,8 +2,10 @@ import { Client, Events, GatewayIntentBits, MessageFlags, PermissionsBitField } 
 import { commandData, commands } from './commands/index.js';
 import { handleRoleButton } from './interactions/roleButton.js';
 import { handleVerifyButton } from './interactions/verifyButton.js';
+import { TICKET_PREFIX, handleTicketInteraction } from './tickets.js';
 import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
 import { GuildConfig, getGuildConfig } from '../models/GuildConfig.js';
+import { Ticket } from '../models/Ticket.js';
 import { isVerified, updateMember } from '../roblox/verified.js';
 import { recordMessage, startDiscordActivity } from '../team/discordActivity.js';
 import { warmTeam } from '../team/roster.js';
@@ -12,14 +14,17 @@ const buttonHandlers = {
   [VERIFY_BUTTON_ID]: handleVerifyButton,
 };
 
-// View Channels, Send Messages, Embed Links, Read Message History, Manage Roles, Manage Nicknames
+// View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Roles, Manage Nicknames,
+// Manage Channels (ticket channels)
 const INVITE_PERMISSIONS = new PermissionsBitField([
   'ViewChannel',
   'SendMessages',
   'EmbedLinks',
+  'AttachFiles',
   'ReadMessageHistory',
   'ManageRoles',
   'ManageNicknames',
+  'ManageChannels',
 ]).bitfield;
 
 // Guild Members (privileged: on in the Developer Portal) lists who holds which role for the Team tab; Guild Messages
@@ -102,6 +107,11 @@ client.on(Events.GuildMemberUpdate, async (before, after) => {
 
 client.on(Events.GuildCreate, registerCommands);
 
+// (a ticket channel deleted by hand: its ticket is done)
+client.on(Events.ChannelDelete, (channel) => {
+  Ticket.updateOne({ channelId: channel.id, status: { $ne: 'deleted' } }, { $set: { status: 'deleted', deletedAt: new Date() } }).catch(() => {});
+});
+
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.inCachedGuild()) return;
   if (interaction.isAutocomplete()) {
@@ -111,7 +121,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   let handler;
   if (interaction.isChatInputCommand()) handler = commands.get(interaction.commandName)?.execute;
-  else if (interaction.isButton()) {
+  else if ((interaction.isButton() || interaction.isAnySelectMenu() || interaction.isModalSubmit()) && interaction.customId.startsWith(TICKET_PREFIX)) {
+    handler = handleTicketInteraction;
+  } else if (interaction.isButton()) {
     handler = interaction.customId.startsWith(ROLE_BUTTON_PREFIX)
       ? handleRoleButton
       : buttonHandlers[interaction.customId];

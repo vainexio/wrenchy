@@ -6,12 +6,14 @@ import studioArt from './assets/piyesa-studios.webp';
 import ReactionRolesEditor from './ReactionRolesEditor.jsx';
 import RobloxEditor from './RobloxEditor.jsx';
 import TeamEditor from './TeamEditor.jsx';
+import TicketsEditor from './TicketsEditor.jsx';
 import { Button, ConfirmProvider, Icon, Notice, PageSkeleton, ToastProvider, useConfirm } from './ui.jsx';
 import { clearParams } from './urlState.js';
 import VerificationEditor from './VerificationEditor.jsx';
 
 const TABS = [
   { id: 'team', label: 'Team', icon: 'users', Editor: TeamEditor },
+  { id: 'tickets', label: 'Tickets', icon: 'ticket', Editor: TicketsEditor },
   { id: 'verification', label: 'Verification', icon: 'shield', Editor: VerificationEditor },
   { id: 'reactionRoles', label: 'Reaction Roles', icon: 'tag', Editor: ReactionRolesEditor },
   { id: 'announcements', label: 'Announcements', icon: 'megaphone', Editor: AnnouncementEditor },

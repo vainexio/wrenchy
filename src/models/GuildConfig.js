@@ -127,6 +127,64 @@ const teamSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Tickets (the owner, 2026-10-30): types of ticket ("Content creator application", "Player report"...), each with its
+// own category, staff roles and channel names ("cc-apps-{n}" -> cc-apps-0001), opened from panels posted in a channel.
+const ticketQuestionSchema = new mongoose.Schema(
+  {
+    label: { type: String, required: true }, // (a form field: up to 45 characters)
+    placeholder: { type: String, default: '' },
+    long: { type: Boolean, default: false }, // (a paragraph box rather than one line)
+    required: { type: Boolean, default: true },
+  },
+  { _id: false },
+);
+
+const ticketTypeSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true }, // (stays the same when renamed: buttons and tickets point at it)
+    name: { type: String, required: true }, // (the button's label)
+    emoji: { type: String, default: '' },
+    style: { type: String, enum: ['primary', 'secondary', 'success', 'danger'], default: 'primary' },
+    description: { type: String, default: '' }, // (under it in a dropdown panel)
+    categoryId: { type: String, default: null }, // (the Discord category its tickets open in)
+    staffRoleIds: { type: [String], default: [] }, // (who sees and handles its tickets)
+    namePattern: { type: String, default: 'ticket-{n}' },
+    welcome: { type: String, default: 'Thanks for opening a ticket, {user}! Staff will be with you soon.' },
+    questions: { type: [ticketQuestionSchema], default: [] }, // (asked in a form before it opens; up to 5)
+    pingStaff: { type: Boolean, default: true },
+    maxOpen: { type: Number, default: 1 }, // (open tickets of this type one member can have)
+  },
+  { _id: false },
+);
+
+const ticketPanelSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true },
+    name: { type: String, default: 'Ticket panel' }, // (for the dashboard)
+    channelId: { type: String, default: null },
+    messageId: { type: String, default: null },
+    title: { type: String, default: 'Need help?' },
+    description: { type: String, default: 'Pick what your ticket is about and a private channel opens with our staff.' },
+    color: { type: String, default: '#F08C1A' },
+    style: { type: String, enum: ['buttons', 'menu'], default: 'buttons' },
+    placeholder: { type: String, default: 'Open a ticket…' }, // (a dropdown's prompt)
+    typeIds: { type: [String], default: [] }, // (in the order they show)
+  },
+  { _id: false },
+);
+
+const ticketsSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    transcriptChannelId: { type: String, default: null }, // (closed tickets' transcripts are posted here)
+    dmTranscript: { type: Boolean, default: true }, // (and sent to the person who opened it)
+    closedCategoryId: { type: String, default: null }, // (closed tickets move here; null = they stay)
+    types: { type: [ticketTypeSchema], default: [] },
+    panels: { type: [ticketPanelSchema], default: [] },
+  },
+  { _id: false },
+);
+
 const guildConfigSchema = new mongoose.Schema(
   {
     guildId: { type: String, required: true, unique: true, index: true },
@@ -134,6 +192,7 @@ const guildConfigSchema = new mongoose.Schema(
     reactionRoles: { type: reactionRolesSchema, default: () => ({}) },
     roblox: { type: robloxSchema, default: () => ({}) },
     team: { type: teamSchema, default: () => ({}) },
+    tickets: { type: ticketsSchema, default: () => ({}) },
   },
   { timestamps: true },
 );
