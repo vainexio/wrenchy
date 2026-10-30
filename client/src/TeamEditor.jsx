@@ -3,63 +3,23 @@ import { rankByName } from '../../src/shared/search.js';
 import { api } from './api.js';
 import { useReportDirty } from './appContext.js';
 import { RoleChips } from './PanelParts.jsx';
+import TeamAdd from './TeamAdd.jsx';
+import TeamNotices from './TeamNotices.jsx';
+import { PersonPanel, TakeOffDialog } from './TeamPerson.jsx';
+import TeamRecords from './TeamRecords.jsx';
 import {
-  Badge, Button, Card, Empty, Field, FilterMenu, FilterSummary, Icon, PageHead, PageSkeleton, Popover, SaveBar, SearchInput,
-  SearchList, Segmented, ago, day, useConfirm, useDebounced, useToast,
+  ACCOUNTS, ACCOUNT_FILTERS, STATUSES, STATUS_TONE, mergePeople, nameOf, namesOf, played, reachable, statusLabel,
+} from './teamModel.js';
+import { MatchActions } from './teamPickers.jsx';
+import {
+  Badge, Button, Card, Check, Empty, Field, FilterMenu, FilterSummary, Icon, Notice, PageHead, PageSkeleton, SaveBar,
+  SearchInput, Tabs, ago, day, useConfirm, useToast,
 } from './ui.jsx';
 import { useUrlState } from './urlState.js';
 
-// Team: who of the testers and staff last played (the game reports it) and last chatted (Wrenchy notes when, never
-// what), and who's gone quiet. One list for every group, with search, filters and sorting kept in the address; the
-// groups, the inactive days and the history scan are under Settings.
-
-function played(minutes) {
-  if (!minutes) return 'no time yet';
-  return minutes < 60 ? `${Math.round(minutes)}m played` : `${(minutes / 60).toFixed(minutes < 600 ? 1 : 0)}h played`;
-}
-
-// ------------------------------------------------------------------ what each person is
-const STATUSES = [
-  { value: 'inactive', label: 'Inactive', test: (p) => p.inactiveGame || p.inactiveDiscord },
-  { value: 'game', label: 'Not playing', test: (p) => p.inactiveGame },
-  { value: 'discord', label: 'Not chatting', test: (p) => p.inactiveDiscord },
-  { value: 'active', label: 'Active', test: (p) => !p.inactiveGame && !p.inactiveDiscord },
-  { value: 'online', label: 'In game now', test: (p) => p.game?.online },
-];
-
-/** How their Roblox and Discord accounts were put together (or which one is missing). */
-function accountOf(p) {
-  if (!p.robloxId) return 'noRoblox';
-  if (!p.discordId) return 'noDiscord';
-  if (!p.inServer) return 'left';
-  return p.matchedBy; // linked | matched | name
-}
-const ACCOUNTS = {
-  linked: { label: 'Linked by Bloxlink', icon: 'link' },
-  matched: { label: 'Matched by hand', icon: 'link' },
-  name: { label: 'Matched by name', icon: 'link', hint: 'Their Discord name gives the Roblox username away' },
-  noDiscord: { label: 'No Discord account', icon: 'alert' },
-  noRoblox: { label: 'No Roblox account', icon: 'alert' },
-  left: { label: 'Left the server', icon: 'alert' },
-};
-const ACCOUNT_FILTERS = [
-  { value: 'missing', label: 'Missing an account', test: (a) => a === 'noDiscord' || a === 'noRoblox' },
-  { value: 'noDiscord', label: 'No Discord account', test: (a) => a === 'noDiscord' },
-  { value: 'noRoblox', label: 'No Roblox account', test: (a) => a === 'noRoblox' },
-  { value: 'linked', label: 'Linked by Bloxlink', test: (a) => a === 'linked' },
-  { value: 'matched', label: 'Matched by hand', test: (a) => a === 'matched' },
-  { value: 'name', label: 'Matched by name', test: (a) => a === 'name' },
-  { value: 'left', label: 'Left the server', test: (a) => a === 'left' },
-];
-
-function statusLabel(p) {
-  if (p.game?.online) return 'Playing';
-  if (p.inactiveGame && p.inactiveDiscord) return 'Inactive';
-  if (p.inactiveGame) return 'Not playing';
-  if (p.inactiveDiscord) return 'Quiet';
-  return 'Active';
-}
-const STATUS_TONE = { Playing: 'ok', Active: 'ok', Inactive: 'bad', 'Not playing': 'warn', Quiet: 'warn' };
+// Team: everyone in the testers and staff groups, when they last played (the game reports it) and chatted (Wrenchy
+// notes when, never what), and managing them: add members, change their Roblox role, suspend or remove them (their
+// record stays, as proof), and send them notices by DM. Sections: People, Add member, Notices, Records, Settings.
 
 // (lower = shown first; nobody-seen counts as long ago)
 const SORTS = {
@@ -83,46 +43,6 @@ function sortPeople(list, sort) {
     .map((p) => [key(p), p])
     .sort(([a, pa], [b, pb]) => (a < b ? -1 : a > b ? 1 : 0) * (desc ? -1 : 1) || name(pa).localeCompare(name(pb)))
     .map(([, p]) => p);
-}
-
-/** Everyone once, whichever groups they're in (someone can be a Tester and Staff). */
-function mergePeople(groups) {
-  const byKey = new Map();
-  for (const g of groups) {
-    for (const p of g.people) {
-      const key = p.robloxId ? `r${p.robloxId}` : `d${p.discordId}`;
-      const have = byKey.get(key);
-      if (have) {
-        have.groups.push(g.name);
-        have.robloxRoles = [...new Set([...have.robloxRoles, ...p.robloxRoles])];
-        have.discordRoles = [...new Set([...have.discordRoles, ...p.discordRoles])];
-      } else {
-        byKey.set(key, { ...p, key, groups: [g.name], account: accountOf(p) });
-      }
-    }
-  }
-  // (a group lists someone Discord-only when another group matched their Discord account: fold them in)
-  const people = [...byKey.values()];
-  const withRoblox = new Map(people.filter((p) => p.robloxId && p.discordId).map((p) => [p.discordId, p]));
-  return people.filter((p) => {
-    const same = !p.robloxId && withRoblox.get(p.discordId);
-    if (!same) return true;
-    same.groups = [...new Set([...same.groups, ...p.groups])];
-    same.discordRoles = [...new Set([...same.discordRoles, ...p.discordRoles])];
-    return false;
-  });
-}
-
-const namesOf = (p) => [p.discordName, p.username, p.displayName, p.robloxId && String(p.robloxId), p.discordId];
-// (the start of a name to look for look-alikes by: its first run of 3+ letters, "Bea2k_ph" -> "Bea")
-const nameSeed = (s) => (s ?? '').replace(/\(.*$/, '').match(/[A-Za-z]{3,}/)?.[0] ?? '';
-
-/** `list` with the ones named like `name` first. */
-function similarFirst(list, name, names) {
-  const word = nameSeed(name);
-  if (!word) return list;
-  const near = rankByName(list, word, names).map((r) => r.item);
-  return [...near, ...list.filter((x) => !near.includes(x))];
 }
 
 // ------------------------------------------------------------------ the cells
@@ -157,176 +77,27 @@ function DiscordCell({ p, channels }) {
   );
 }
 
-// ------------------------------------------------------------------ matching accounts by hand
-function MemberRow({ m }) {
-  const sub = [m.username && `@${m.username}`, m.nickname && m.nickname !== m.displayName && m.nickname].filter(Boolean).join(' · ');
-  return (
-    <div className="pick-row">
-      {m.avatar ? <img className="avatar-xs" src={m.avatar} alt="" /> : <span className="avatar-xs">{(m.displayName ?? '?')[0]}</span>}
-      <span className="grow">
-        {m.displayName}
-        {sub && <small>{sub}</small>}
-      </span>
-      {m.linkedTo ? (
-        <Badge tone="warn" title="Bloxlink linked them to another Roblox account">Linked to @{m.linkedTo}</Badge>
-      ) : m.matched ? (
-        <Badge tone="warn" title="Already matched to another Roblox account by hand">Matched</Badge>
-      ) : (
-        m.roles?.[0] && <span className="pill">{m.roles[0]}</span>
-      )}
-    </div>
-  );
-}
-
-/** Find the Discord member a Roblox account belongs to: the whole server, searched on the server. */
-function DiscordPicker({ guildId, p, spare, onPick }) {
-  const [query, setQuery] = useState('');
-  const typed = useDebounced(query.trim(), 200);
-  // (with nothing typed: members named like the Roblox account)
-  const ask = typed || nameSeed(p.username) || nameSeed(p.displayName);
-  const [found, setFound] = useState({ for: null, results: [], total: 0, error: null });
-  useEffect(() => {
-    if (!ask) return undefined;
-    let live = true;
-    api(`/guilds/${guildId}/members?q=${encodeURIComponent(ask)}&limit=25`)
-      .then((r) => live && setFound({ for: ask, ...r, error: null }))
-      .catch((err) => live && setFound({ for: ask, results: [], total: 0, error: err.message }));
-    return () => {
-      live = false;
-    };
-  }, [ask]);
-  const loading = Boolean(ask) && (found.for !== ask || query.trim() !== typed);
-  const toItem = (m, section) => ({ key: `${section}${m.id}`, member: m, section, content: <MemberRow m={m} /> });
-  let items;
-  if (!query.trim()) {
-    const fromSpare = similarFirst(spare, p.username, (s) => [s.discordName]).map((s) => ({
-      id: s.discordId, displayName: s.discordName, avatar: s.discordAvatar, roles: s.discordRoles,
-    }));
-    const spareIds = new Set(fromSpare.map((m) => m.id));
-    items = [
-      ...fromSpare.map((m) => toItem(m, 'In a team group, no Roblox account')),
-      ...(found.for === ask ? found.results.filter((m) => !spareIds.has(m.id)).map((m) => toItem(m, `Named like “${ask}”`)) : []),
-    ];
-  } else {
-    items = found.for === typed ? found.results.map((m) => toItem(m)) : [];
-  }
-  const footer = found.error
-    ? <span className="field-error">{found.error}</span>
-    : query.trim() && found.for === typed && found.total > found.results.length
-      ? `Showing the best ${found.results.length} of ${found.total}. Keep typing to narrow it down.`
-      : !query.trim()
-        ? 'Type a name, @username, nickname or Discord ID to search everyone.'
-        : null;
-  return (
-    <div className="picker">
-      <div className="picker-head">
-        Who is <strong>@{p.username}</strong> on Discord?
-      </div>
-      <SearchList
-        query={query}
-        onQuery={setQuery}
-        placeholder="Search members…"
-        items={items}
-        loading={loading}
-        onPick={(it) => onPick(it.member)}
-        empty={query.trim() ? `Nobody matches “${query.trim()}”. Try their username, nickname or ID.` : 'No suggestions. Type to search.'}
-        footer={footer}
-      />
-    </div>
-  );
-}
-
-/** Find the Roblox account a Discord-only member is: the group's Roblox accounts nobody's matched to yet. */
-function RobloxPicker({ p, spareRoblox, onPick }) {
-  const [query, setQuery] = useState('');
-  const list = query.trim()
-    ? rankByName(spareRoblox, query, (r) => [r.username, r.displayName, String(r.robloxId)]).map((x) => x.item)
-    : similarFirst(spareRoblox, p.discordName, (r) => [r.username, r.displayName]);
-  return (
-    <div className="picker">
-      <div className="picker-head">
-        Which Roblox account is <strong>{p.discordName}</strong>?
-      </div>
-      <SearchList
-        query={query}
-        onQuery={setQuery}
-        placeholder="Search Roblox usernames…"
-        items={list.map((r) => ({
-          key: r.robloxId,
-          r,
-          content: (
-            <div className="pick-row">
-              <span className="avatar-xs">{r.username[0]}</span>
-              <span className="grow">
-                {r.displayName ?? r.username}
-                <small>@{r.username} · {r.robloxRoles.join(', ')}</small>
-              </span>
-            </div>
-          ),
-        }))}
-        onPick={(it) => onPick(it.r)}
-        empty={query.trim() ? `No unmatched group member called “${query.trim()}”.` : 'Every Roblox account in the groups has a Discord account.'}
-        footer="Only Roblox accounts in the groups with no Discord account yet."
-      />
-    </div>
-  );
-}
-
-function MatchButton({ label, variant, title, busy, children }) {
-  return (
-    <Popover
-      align="end"
-      className="picker-pop"
-      label={label}
-      trigger={(props) => (
-        <Button size="sm" variant={variant} icon="link" disabled={busy} title={title} {...props}>
-          {label}
-        </Button>
-      )}
-    >
-      {children}
-    </Popover>
-  );
-}
-
-function Actions({ p, guildId, spare, spareRoblox, busy, onMatch, onUnmatch }) {
-  const pickDiscord = (close) => (
-    <DiscordPicker guildId={guildId} p={p} spare={spare} onPick={(m) => (close(), onMatch(p, m.id, m.displayName))} />
-  );
-  if (p.account === 'noDiscord') return <MatchButton label="Match Discord" busy={busy}>{pickDiscord}</MatchButton>;
-  if (p.account === 'name') {
-    return (
-      <MatchButton label="Change" variant="ghost" busy={busy} title="Wrong person? Pick their Discord account">
-        {pickDiscord}
-      </MatchButton>
-    );
-  }
-  if (p.account === 'matched') {
-    return (
-      <Button size="sm" variant="ghost-danger" disabled={busy} onClick={() => onUnmatch(p)}>
-        Unmatch
-      </Button>
-    );
-  }
-  if (p.account === 'noRoblox' && p.inServer && spareRoblox.length > 0) {
-    return (
-      <MatchButton label="Match Roblox" busy={busy}>
-        {(close) => <RobloxPicker p={p} spareRoblox={spareRoblox} onPick={(r) => (close(), onMatch(r, p.discordId, p.discordName))} />}
-      </MatchButton>
-    );
-  }
-  return null;
-}
-
-function Person({ p, channels, showGroups, ...actions }) {
-  const name = p.discordName ?? p.displayName ?? p.username;
+function Person({ p, channels, showGroups, selected, onSelect, onOpen, ...actions }) {
+  const name = nameOf(p);
   const account = ACCOUNTS[p.account];
   const missing = account.icon === 'alert';
   const status = statusLabel(p);
   const roles = [...new Set([...p.robloxRoles, ...p.discordRoles])].filter((r) => !p.groups.includes(r));
   const details = [...(showGroups ? p.groups : []), ...roles].join(' · ');
+  // (the row opens the person, except where its own links and buttons are pressed)
+  const open = (e) => !e.target.closest('a, button, input, .popover') && onOpen(p);
   return (
-    <div className="team-row">
+    <div
+      className={`team-row${selected ? ' selected' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${name}`}
+      onClick={open}
+      onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onOpen(p)}
+    >
+      <div className="row-check">
+        <Check checked={selected} onChange={onSelect} label={`Select ${name}`} />
+      </div>
       <div className="who">
         {p.discordAvatar ? <img className="avatar-sm" src={p.discordAvatar} alt="" /> : <span className="avatar-sm">{(name ?? '?')[0]}</span>}
         <div className="grow">
@@ -364,7 +135,7 @@ function Person({ p, channels, showGroups, ...actions }) {
         <Badge tone={STATUS_TONE[status]}>{status}</Badge>
       </div>
       <div className="row-actions">
-        <Actions p={p} {...actions} />
+        <MatchActions p={p} {...actions} />
       </div>
     </div>
   );
@@ -403,8 +174,7 @@ function download(name, text) {
 
 const FILTERS = { q: '', group: [], status: '', account: '', role: [], sort: 'activity', view: 'people' };
 
-function People({ data, guild, guildId, busy, filters, setFilters, onMatch, onUnmatch, toast }) {
-  const people = useMemo(() => mergePeople(data.groups), [data]);
+function People({ data, people, guild, busy, filters, setFilters, matchProps, selected, setSelected, onOpen, toast }) {
   const { q, group, status, account, role, sort } = filters;
   const groupNames = data.groups.map((g) => g.name);
 
@@ -421,8 +191,10 @@ function People({ data, guild, guildId, busy, filters, setFilters, onMatch, onUn
   const shown = sortPeople(people.filter((p) => passes(p)), sort);
   const allRoles = [...new Set(people.flatMap((p) => [...p.robloxRoles, ...p.discordRoles]))].sort();
 
-  const spare = people.filter((p) => p.account === 'noRoblox' && p.inServer).sort((a, b) => a.discordName.localeCompare(b.discordName));
-  const spareRoblox = people.filter((p) => p.account === 'noDiscord');
+  const shownKeys = shown.map((p) => p.key);
+  const allShownSelected = shown.length > 0 && shownKeys.every((k) => selected.includes(k));
+  const someShownSelected = shownKeys.some((k) => selected.includes(k));
+  const selectShown = (on) => setSelected(on ? [...new Set([...selected, ...shownKeys])] : selected.filter((k) => !shownKeys.includes(k)));
 
   const chips = [
     q.trim() && { key: 'q', label: `“${q.trim()}”`, onRemove: () => setFilters({ q: '' }) },
@@ -508,6 +280,9 @@ function People({ data, guild, guildId, busy, filters, setFilters, onMatch, onUn
         ) : (
           <>
             <div className="team-head">
+              <div className="row-check">
+                <Check checked={allShownSelected} indeterminate={!allShownSelected && someShownSelected} onChange={selectShown} label="Select everyone shown" />
+              </div>
               <SortHead id="name" label="Person" sort={sort} onSort={(s) => setFilters({ sort: s })} />
               <SortHead id="played" label="Last played" sort={sort} onSort={(s) => setFilters({ sort: s })} />
               <SortHead id="message" label="Last message" sort={sort} onSort={(s) => setFilters({ sort: s })} />
@@ -520,12 +295,11 @@ function People({ data, guild, guildId, busy, filters, setFilters, onMatch, onUn
                 p={p}
                 channels={guild?.channels}
                 showGroups={groupNames.length > 1}
-                guildId={guildId}
-                spare={spare}
-                spareRoblox={spareRoblox}
+                selected={selected.includes(p.key)}
+                onSelect={(on) => setSelected(on ? [...selected, p.key] : selected.filter((k) => k !== p.key))}
+                onOpen={onOpen}
                 busy={busy}
-                onMatch={onMatch}
-                onUnmatch={onUnmatch}
+                {...matchProps}
               />
             ))}
           </>
@@ -605,6 +379,40 @@ function Settings({ data, guild, onSave, hidden }) {
   );
 }
 
+function BotAccount({ admin }) {
+  const b = admin?.bot;
+  return (
+    <Card
+      title="Roblox bot account"
+      description="Wrenchy signs in as it to give and take Roblox roles when you add, change, suspend or remove someone."
+      aside={!b ? null : b.ok ? <Badge tone="ok" dot>Connected</Badge> : b.configured ? <Badge tone="bad" dot>Not working</Badge> : <Badge dot>Not set up</Badge>}
+    >
+      {!b ? (
+        <div className="skeleton" style={{ height: 40 }} />
+      ) : b.ok ? (
+        <>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Signed in as <b>@{b.account.name}</b>, <b>{b.role.name}</b> in the group. It can give:
+          </p>
+          <div className="chips">
+            {admin.roles.filter((r) => r.assignable).map((r) => <span key={r.id} className="pill">{r.name}</span>)}
+          </div>
+        </>
+      ) : (
+        <>
+          {b.error && <Notice tone="error">{b.error}</Notice>}
+          <ol className="setup">
+            <li>Put a Roblox account for Wrenchy in the group, ranked above the team roles, with permission to manage members.</li>
+            <li>
+              On the host (Render → Environment), add <code>ROBLOX_COOKIE</code> with that account’s cookie, then redeploy.
+            </li>
+          </ol>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function Tracking({ data, scanning, onScan }) {
   const { since, scan, game } = data;
   return (
@@ -645,17 +453,30 @@ function Tracking({ data, scanning, onScan }) {
 }
 
 // ------------------------------------------------------------------ the tab
+const VIEWS = ['people', 'add', 'notices', 'records', 'settings'];
+
 export default function TeamEditor({ guildId, onError }) {
   const toast = useToast();
   const confirm = useConfirm();
   const [data, setData] = useState(null);
   const [guild, setGuild] = useState(null);
+  const [admin, setAdmin] = useState(null);
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadedAt, setLoadedAt] = useState(null);
   const [filters, setFilters] = useUrlState(FILTERS);
+  const [selected, setSelected] = useState([]);
+  const [openKey, setOpenKey] = useState(null);
+  const [takeOff, setTakeOff] = useState(null); // { kind, people }
+  const [noticeTo, setNoticeTo] = useState(null); // (people keys, from People)
+  const [recordsKey, setRecordsKey] = useState(0);
 
+  const setTeam = (d) => {
+    setData(d);
+    setLoadedAt(new Date());
+    setRecordsKey((k) => k + 1);
+  };
   const load = () =>
     api(`/guilds/${guildId}/team`)
       .then((d) => {
@@ -666,6 +487,7 @@ export default function TeamEditor({ guildId, onError }) {
   useEffect(() => {
     load();
     api(`/guilds/${guildId}`).then(setGuild).catch(onError);
+    api(`/guilds/${guildId}/team/admin`).then(setAdmin).catch(onError);
   }, [guildId]);
   // (while a history scan runs, and every minute anyway: who's in game changes)
   useEffect(() => {
@@ -680,6 +502,13 @@ export default function TeamEditor({ guildId, onError }) {
     }
     setWasRunning(Boolean(data?.scan?.running));
   }, [data?.scan?.running]);
+
+  const people = useMemo(() => (data ? mergePeople(data.groups) : []), [data]);
+  // (people who left the list, by a removal or a refresh, aren't selected any more)
+  useEffect(() => {
+    const keys = new Set(people.map((p) => p.key));
+    setSelected((list) => list.filter((k) => keys.has(k)));
+  }, [people]);
 
   async function run(fn, success) {
     setBusy(true);
@@ -730,10 +559,27 @@ export default function TeamEditor({ guildId, onError }) {
     setRefreshing(false);
   }
 
-  const view = filters.view === 'settings' ? 'settings' : 'people';
+  const view = VIEWS.includes(filters.view) ? filters.view : 'people';
+  const goto = (v) => setFilters({ view: v });
+  const matchProps = {
+    guildId,
+    spare: people.filter((p) => p.account === 'noRoblox' && p.inServer).sort((a, b) => a.discordName.localeCompare(b.discordName)),
+    spareRoblox: people.filter((p) => p.account === 'noDiscord'),
+    busy,
+    onMatch,
+    onUnmatch,
+  };
+  const open = people.find((p) => p.key === openKey);
+  const picked = people.filter((p) => selected.includes(p.key));
+  const noticeFor = (list) => {
+    setNoticeTo(list.filter(reachable).map((p) => p.key));
+    setOpenKey(null);
+    goto('notices');
+  };
+
   return (
     <>
-      <PageHead title="Team" description="See who’s playing, who’s chatting, and who’s gone quiet.">
+      <PageHead title="Team" description="Your testers and staff: who’s active, and everything to manage them.">
         <span className="subtle" title={loadedAt?.toLocaleTimeString()}>
           Updated {ago(loadedAt)}
         </span>
@@ -742,34 +588,54 @@ export default function TeamEditor({ guildId, onError }) {
         </Button>
       </PageHead>
 
-      <div className="subnav">
-        <Segmented
-          label="Team view"
-          value={view}
-          onChange={(v) => setFilters({ view: v })}
-          options={[
-            { value: 'people', label: 'People' },
-            { value: 'settings', label: 'Groups & tracking' },
-          ]}
-        />
-      </div>
+      <Tabs
+        label="Team sections"
+        value={view}
+        onChange={goto}
+        tabs={[
+          { value: 'people', label: 'People', icon: 'users', count: people.length },
+          { value: 'add', label: 'Add member', icon: 'userPlus' },
+          { value: 'notices', label: 'Notices', icon: 'chat' },
+          { value: 'records', label: 'Records', icon: 'file' },
+          { value: 'settings', label: 'Settings', icon: 'gear' },
+        ]}
+      />
 
       <div className="stack">
         {view === 'people' && (
           <People
             data={data}
+            people={people}
             guild={guild}
-            guildId={guildId}
             busy={busy}
             filters={filters}
             setFilters={setFilters}
-            onMatch={onMatch}
-            onUnmatch={onUnmatch}
+            matchProps={matchProps}
+            selected={selected}
+            setSelected={setSelected}
+            onOpen={(p) => setOpenKey(p.key)}
             toast={toast}
           />
         )}
+        {view === 'add' && (
+          <TeamAdd
+            guildId={guildId}
+            guild={guild}
+            data={data}
+            admin={admin}
+            people={people}
+            onTeam={setTeam}
+            onError={onError}
+            onAdded={(name) => setFilters({ ...FILTERS, sort: filters.sort, q: name })}
+          />
+        )}
+        {view === 'notices' && (
+          <TeamNotices guildId={guildId} guild={guild} data={data} people={people} preset={noticeTo} onError={onError} onSent={() => setRecordsKey((k) => k + 1)} />
+        )}
+        {view === 'records' && <TeamRecords guildId={guildId} onError={onError} onTeam={setTeam} reloadKey={recordsKey} />}
+        {view === 'settings' && <BotAccount admin={admin} />}
         {view === 'settings' && <Tracking data={data} scanning={scanning} onScan={scan} />}
-        {/* (kept mounted on People too, so unsaved group changes aren't lost and the save bar stays) */}
+        {/* (kept mounted elsewhere too, so unsaved group changes aren't lost and the save bar stays) */}
         <Settings
           hidden={view !== 'settings'}
           data={data}
@@ -777,6 +643,57 @@ export default function TeamEditor({ guildId, onError }) {
           onSave={(form) => run(() => api(`/guilds/${guildId}/team`, { method: 'PUT', body: form }), { title: 'Saved', text: 'The list is rebuilt with the new groups.' })}
         />
       </div>
+
+      {view === 'people' && picked.length > 0 && (
+        <div className="bulkbar" role="region" aria-label="Selected people">
+          <span className="bulkbar-text">
+            <b>{picked.length}</b> selected
+          </span>
+          <Button size="sm" icon="chat" disabled={!picked.some(reachable)} onClick={() => noticeFor(picked)}>
+            Send notice
+          </Button>
+          <Button size="sm" icon="pause" onClick={() => setTakeOff({ kind: 'suspended', people: picked })}>
+            Suspend
+          </Button>
+          <Button size="sm" variant="ghost-danger" icon="ban" onClick={() => setTakeOff({ kind: 'removed', people: picked })}>
+            Remove
+          </Button>
+          <Button size="sm" variant="ghost" icon="x" title="Clear selection" onClick={() => setSelected([])} />
+        </div>
+      )}
+
+      {open && (
+        <PersonPanel
+          p={open}
+          guildId={guildId}
+          admin={admin}
+          channels={guild?.channels}
+          matchProps={matchProps}
+          onClose={() => setOpenKey(null)}
+          onTeam={setTeam}
+          onNotice={noticeFor}
+          onTakeOff={(kind, list) => setTakeOff({ kind, people: list })}
+          onError={onError}
+        />
+      )}
+
+      {takeOff && (
+        <TakeOffDialog
+          kind={takeOff.kind}
+          people={takeOff.people}
+          guildId={guildId}
+          admin={admin}
+          onTeam={setTeam}
+          onError={onError}
+          onClose={(done) => {
+            setTakeOff(null);
+            if (done) {
+              setSelected([]);
+              setOpenKey(null);
+            }
+          }}
+        />
+      )}
     </>
   );
 }

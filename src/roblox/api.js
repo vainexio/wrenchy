@@ -49,6 +49,23 @@ export async function getRoleMembers(groupId, roleId, { fresh = false } = {}) {
   return users;
 }
 
+/** A Roblox account by id: { robloxId, username, displayName }, or null if there's none. */
+export async function getRobloxUser(userId) {
+  const res = await fetch(`https://users.roblox.com/v1/users/${userId}`, {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (res.status === 404 || res.status === 400) return null;
+  if (!res.ok) throw new Error(`Roblox API ${res.status} for user ${userId}`);
+  const u = await res.json();
+  return { robloxId: u.id, username: u.name, displayName: u.displayName };
+}
+
+/** Forgets cached role member lists (after the bot account changes someone's role). */
+export function forgetRoleMembers() {
+  roleMembersCache.clear();
+}
+
 /**
  * Roblox accounts by username, up to 100 per request: Map(lowercased username -> { robloxId, username,
  * displayName }). Names Roblox doesn't know (or banned accounts) are missing from it.

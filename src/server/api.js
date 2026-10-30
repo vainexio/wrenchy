@@ -9,6 +9,9 @@ import { listAnnouncements, sendAnnouncement } from './announcements.js';
 import { HttpError } from './errors.js';
 import { applyRoblox, robloxOverview, syncGuild, updateOne } from './robloxAdmin.js';
 import { matchMember, saveTeam, searchMembers, startScan, teamOverview } from './teamAdmin.js';
+import {
+  addMember, changeRole, listNotices, listRecords, lookupRoblox, rankingInfo, reinstate, sendNotice, takeOff,
+} from './teamManage.js';
 
 const PANEL_CHANNEL_TYPES = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
 const CREATE_DEFAULT_ROLE = '__create__';
@@ -243,6 +246,56 @@ export function createApiRouter(client, auth) {
     const guild = getGuild(client, req.params.guildId);
     await matchMember(guild, req.body ?? {});
     res.json(await teamOverview(guild));
+  });
+
+  // Managing the team: the Roblox bot account, adding, role changes, suspending / removing, records, notices
+  router.get('/guilds/:guildId/team/admin', async (req, res) => {
+    getGuild(client, req.params.guildId);
+    res.json(await rankingInfo());
+  });
+
+  router.get('/guilds/:guildId/team/roblox-user', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await lookupRoblox(guild, req.query.username));
+  });
+
+  router.post('/guilds/:guildId/team/members', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const result = await addMember(guild, req.user, req.body ?? {});
+    res.json({ result, team: await teamOverview(guild) });
+  });
+
+  router.post('/guilds/:guildId/team/role', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const result = await changeRole(guild, req.user, req.body ?? {});
+    res.json({ result, team: await teamOverview(guild) });
+  });
+
+  router.post('/guilds/:guildId/team/take-off', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const result = await takeOff(guild, req.user, req.body ?? {});
+    res.json({ result, team: await teamOverview(guild) });
+  });
+
+  router.post('/guilds/:guildId/team/reinstate/:recordId', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const result = await reinstate(guild, req.user, req.params.recordId);
+    res.json({ result, team: await teamOverview(guild) });
+  });
+
+  router.get('/guilds/:guildId/team/records', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await listRecords(guild, req.query));
+  });
+
+  router.get('/guilds/:guildId/team/notices', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await listNotices(guild));
+  });
+
+  router.post('/guilds/:guildId/team/notices', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await sendNotice(guild, req.user, req.body ?? {}));
   });
 
   router.post('/guilds/:guildId/team/scan', async (req, res) => {

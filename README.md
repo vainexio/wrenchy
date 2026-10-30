@@ -60,6 +60,14 @@ The dashboard's **Team** tab lists every tester and staff member with when they 
 - **Last played:** Mangingisda (`ServerScriptService.Modules.TeamActivity`) reports group members (rank 2+) to `POST /api/game/presence` as they join, every 5 minutes while they play, and as they leave (same `X-Wrenchy-Key`). The tab shows who's in game now and the hours played since tracking began.
 - **Last message:** Wrenchy notes when each member sends a message and in which channel, never the text (Guild Messages intent, no Message Content). **Scan Discord history** fills in the time before tracking began from the newest 1,000 messages of every channel it can read.
 
+- **Managing the team** (sections of the Team tab):
+  - **People**: click someone for their panel (accounts, activity, history; change their Roblox role, send a notice, suspend or remove them). Tick several for the same actions at once.
+  - **Add member**: their Discord account, their Roblox account, the group and role. Wrenchy gives the Roblox role (accepting their join request if they sent one) and the group's Discord roles.
+  - **Suspend / Remove**: their team role on Roblox becomes the group's lowest role and their team Discord roles come off. A reason is required. Suspended people can be reinstated (they get back exactly what they had).
+  - **Notices**: one message DMed to a group, a type of people (inactive, not playing...) or people picked by hand, `{name}` filled in for each. Sent one per second or so; the page shows who got it.
+  - **Records**: everything above, kept for good with a snapshot of the person's activity and roles at the time, as proof if a removal is disputed.
+- **Roblox bot account**: Roblox roles are changed by a Roblox account Wrenchy signs in as. Put it in the group ranked above the team roles, with permission to manage members, and set its `.ROBLOSECURITY` cookie as `ROBLOX_COOKIE` on the host. **Settings** on the Team tab says whether it works and which roles it can give.
+
 `/inactive [group] [days]` shows the inactive list in Discord (private reply, dashboard role only).
 
 Needs the **Server Members Intent** in the Developer Portal (Bot → Privileged Gateway Intents) and **Read Message History** for the scan.
@@ -104,7 +112,7 @@ Create a **Web Service** from this repo:
 | Build Command | `npm install && npm run build` |
 | Start Command | `npm start` |
 | Health Check Path | `/api/health` |
-| Environment | `DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `MONGODB_URI`, `ADMIN_ROLE_ID`, `GAME_API_KEY` |
+| Environment | `DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `MONGODB_URI`, `ADMIN_ROLE_ID`, `GAME_API_KEY`, `ROBLOX_COOKIE` |
 
 Render sets `RENDER_EXTERNAL_URL` automatically, which is used for the login redirect. Set `PUBLIC_URL` only if you use a custom domain.
 In MongoDB Atlas, allow Render's IPs under **Network Access** (or `0.0.0.0/0`).

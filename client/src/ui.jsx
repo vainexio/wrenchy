@@ -28,6 +28,12 @@ const PATHS = {
   chat: 'M21 12a8 8 0 01-11.7 7.1L4 20l1.1-4.6A8 8 0 1121 12z',
   clock: 'M12 7v5l3 2 M12 21a9 9 0 100-18 9 9 0 000 18z',
   chevron: 'M6 9l6 6 6-6',
+  userPlus: 'M15 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1 M8.5 10a3 3 0 100-6 3 3 0 000 6z M19 8v6 M16 11h6',
+  pause: 'M12 21a9 9 0 100-18 9 9 0 000 18z M10 9v6 M14 9v6',
+  ban: 'M12 21a9 9 0 100-18 9 9 0 000 18z M5.6 5.6l12.8 12.8',
+  file: 'M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z M14 3v5h5 M9 13h6 M9 17h6',
+  undo: 'M9 14L4 9l5-5 M4 9h11a5 5 0 010 10h-3',
+  gear: 'M12 15a3 3 0 100-6 3 3 0 000 6z M19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.5 2.6a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 000 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.5-2.6a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z',
   download: 'M12 4v11 M7 10l5 5 5-5 M5 20h14',
 };
 
@@ -489,6 +495,68 @@ export function PageSkeleton() {
       <div className="skeleton" style={{ height: 16, width: 420, maxWidth: '100%' }} />
       <div className="skeleton" style={{ height: 220 }} />
       <div className="skeleton" style={{ height: 140 }} />
+    </div>
+  );
+}
+
+/** A page's sections as tabs under its heading. tabs: [{ value, label, icon?, count? }]. */
+export function Tabs({ value, onChange, tabs, label }) {
+  return (
+    <nav className="tabs" role="tablist" aria-label={label}>
+      {tabs.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          role="tab"
+          aria-selected={value === t.value}
+          className={`tab${value === t.value ? ' active' : ''}`}
+          onClick={() => value !== t.value && onChange(t.value)}
+        >
+          {t.icon && <Icon name={t.icon} />}
+          {t.label}
+          {t.count ? <span className="tab-count">{t.count}</span> : null}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/** A checkbox on its own (selecting rows). */
+export function Check({ checked, indeterminate, onChange, label }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = Boolean(indeterminate);
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      className="check"
+      checked={checked}
+      aria-label={label}
+      onChange={(e) => onChange(e.target.checked)}
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
+
+/** A dialog with anything in it (a form): Esc or a click outside closes it. `actions` are its buttons. */
+export function Modal({ title, children, actions, onClose }) {
+  const id = useId();
+  const box = useRef(null);
+  useEffect(() => {
+    box.current?.querySelector('textarea, input, select, button.primary, button.danger')?.focus();
+    const onKey = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  return (
+    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={id} ref={box}>
+        <h2 id={id}>{title}</h2>
+        <div className="dialog-body">{children}</div>
+        {actions && <div className="dialog-actions">{actions}</div>}
+      </div>
     </div>
   );
 }
