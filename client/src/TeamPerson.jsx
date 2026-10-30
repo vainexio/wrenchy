@@ -50,7 +50,31 @@ function ChatActivity({ p, minimum, channel }) {
         </div>
       )}
       {c?.checkIns && <Notice tone="warn">Posts on most days but about one message each time: keeping “last message” fresh without really taking part.</Notice>}
-      {p.lowChat && !c?.checkIns && <Notice tone="warn">Below the minimum of {minimum} messages a week.</Notice>}
+      {p.lowChat && !c?.checkIns && <Notice tone="warn">Under the weekly minimum on Discord ({minimum} messages, or time talking in voice).</Notice>}
+    </div>
+  );
+}
+
+function VoiceActivity({ p }) {
+  const v = p.voice;
+  if (!p.discordId || !p.inServer) return <p className="subtle">No Discord account in the server.</p>;
+  return (
+    <div className="activity">
+      <div className="activity-head">
+        <div>
+          <b>{hours(v?.withOthersWeek ?? 0)}</b> talking this week
+        </div>
+        <span className="subtle">Last {p.discord?.lastVoiceAt ? ago(p.discord.lastVoiceAt) : 'never'}</span>
+      </div>
+      {v && <DayBars values={v.daily} fmt={(m) => `${hours(m)} with others`} label="Minutes in voice with others per day, last 30 days" floor={60} />}
+      {v && (
+        <div className="facts four">
+          <div><span>30 days</span><b>{hours(v.withOthersMonth)}</b><small>with others</small></div>
+          <div><span>Days talking</span><b>{v.activeDays} of 30</b></div>
+          <div><span>In voice, all</span><b>{hours(v.week)}</b><small>this week</small></div>
+          <div><span>Alone / deafened</span><b>{hours(Math.max(0, v.week - v.withOthersWeek))}</b><small>this week</small></div>
+        </div>
+      )}
     </div>
   );
 }
@@ -300,6 +324,11 @@ export function PersonPanel({ p, guildId, admin, settings, channels, matchProps,
           <section>
             <h3>Chat, last 30 days</h3>
             <ChatActivity p={p} minimum={settings.minMessagesWeek} channel={channel} />
+          </section>
+
+          <section>
+            <h3>Voice, last 30 days</h3>
+            <VoiceActivity p={p} />
           </section>
 
           <section>

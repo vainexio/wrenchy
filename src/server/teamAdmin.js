@@ -64,13 +64,14 @@ export async function teamOverview(guild) {
     settings: {
       inactiveDays: team.inactiveDays,
       minMessagesWeek: team.minMessagesWeek,
+      minVoiceWeek: team.minVoiceWeek,
       minMinutesWeek: team.minMinutesWeek,
       groups: team.groups.map((g) => ({ name: g.name, robloxRoleIds: [...g.robloxRoleIds], discordRoleIds: [...g.discordRoleIds] })),
     },
     groupId: config.defaultRobloxGroupId,
     groupRoles: groupRoles.filter((r) => r.rank > 1),
     groups,
-    since: { game: gameSince, discord: team.discordSince, scannedAt: team.scannedAt, daily: team.dailySince },
+    since: { game: gameSince, discord: team.discordSince, scannedAt: team.scannedAt, daily: team.dailySince, backfilledAt: team.backfilledAt },
     scan: scans.get(guild.id) ?? null,
     game: { keySet: Boolean(config.gameApiKey), lastSeenAt: gameStatus.lastSeenAt },
   };
@@ -84,7 +85,11 @@ export async function saveTeam(guild, body) {
     if (!Number.isInteger(days) || days < 1 || days > 90) throw new HttpError(400, 'Inactive after must be 1 to 90 days.');
     gc.team.inactiveDays = days;
   }
-  for (const [key, label, max] of [['minMessagesWeek', 'Messages a week', 1000], ['minMinutesWeek', 'Minutes played a week', 10000]]) {
+  for (const [key, label, max] of [
+    ['minMessagesWeek', 'Messages a week', 1000],
+    ['minVoiceWeek', 'Minutes in voice a week', 10000],
+    ['minMinutesWeek', 'Minutes played a week', 10000],
+  ]) {
     if (body[key] === undefined) continue;
     const n = Number(body[key]);
     if (!Number.isInteger(n) || n < 0 || n > max) throw new HttpError(400, `${label} must be 0 to ${max}.`);

@@ -27,6 +27,7 @@ const discordActivitySchema = new mongoose.Schema(
     lastMessageAt: { type: Date, default: null },
     lastChannelId: { type: String, default: null },
     messages: { type: Number, default: 0 }, // (counted since tracking began; a history scan doesn't add to it)
+    lastVoiceAt: { type: Date, default: null }, // (the last minute they were in a voice channel)
   },
   { timestamps: true },
 );
@@ -36,7 +37,8 @@ export const DiscordActivity = mongoose.model('DiscordActivity', discordActivity
 
 // Per member per day (Manila time): how much they chatted, for the Team tab's activity numbers. One message a day keeps
 // "last message" fresh but isn't taking part (the owner, 2026-10-30: "they can bypass activity by sending 1 useless
-// message everyday"). Still never the text: the count, how many were replies, and which channels. Kept 120 days.
+// message everyday"). Still never the text: the count, how many were replies, which channels, and minutes in voice.
+// Kept 120 days.
 const DAILY_KEEP_S = 120 * 86_400;
 const discordDailySchema = new mongoose.Schema(
   {
@@ -46,6 +48,8 @@ const discordDailySchema = new mongoose.Schema(
     messages: { type: Number, default: 0 },
     replies: { type: Number, default: 0 },
     channels: { type: [String], default: [] },
+    voiceMinutes: { type: Number, default: 0 }, // (in a voice channel, AFK channel aside)
+    voiceWithOthers: { type: Number, default: 0 }, // (of those, with someone else there and not deafened)
   },
   { timestamps: true },
 );

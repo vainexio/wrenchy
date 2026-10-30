@@ -8,7 +8,8 @@ import TeamNotices from './TeamNotices.jsx';
 import { PersonPanel, TakeOffDialog } from './TeamPerson.jsx';
 import TeamRecords from './TeamRecords.jsx';
 import {
-  ACCOUNTS, ACCOUNT_FILTERS, STATUSES, STATUS_TONE, hours, mergePeople, nameOf, namesOf, played, reachable, statusLabel,
+  ACCOUNTS, ACCOUNT_FILTERS, STATUSES, STATUS_TONE, hours, lastOnDiscord, mergePeople, nameOf, namesOf, played, reachable,
+  statusLabel,
 } from './teamModel.js';
 import { MatchActions } from './teamPickers.jsx';
 import {
@@ -26,16 +27,18 @@ const SORTS = {
   activity: { label: 'Least active first', key: (p) => -Math.min(p.gameDays ?? 1e6, p.discordDays ?? 1e6) },
   name: { label: 'Name', key: (p) => (p.discordName ?? p.displayName ?? p.username ?? '').toLowerCase() },
   played: { label: 'Last played', key: (p) => (p.game?.online ? -1 : (p.gameDays ?? 1e6)) },
-  message: { label: 'Last message', key: (p) => p.discordDays ?? 1e6 },
+  message: { label: 'Last on Discord', key: (p) => p.discordDays ?? 1e6 },
   playtime: { label: 'Time played', key: (p) => -(p.game?.minutes ?? 0) },
   // (null: nothing to count, last either way)
   chatweek: { label: 'Messages this week', key: (p) => (p.chat ? -p.chat.week : null) },
   playweek: { label: 'Played this week', key: (p) => (p.play ? -p.play.week : null) },
+  voiceweek: { label: 'Voice this week', key: (p) => (p.voice ? -p.voice.withOthersWeek : null) },
 };
 const SORT_OPTIONS = [
   ['activity', 'Least active first'], ['-activity', 'Most active first'], ['name', 'Name A–Z'], ['-name', 'Name Z–A'],
   ['played', 'Played most recently'], ['-played', 'Played longest ago'], ['message', 'Chatted most recently'],
   ['-message', 'Chatted longest ago'], ['chatweek', 'Most messages this week'], ['-chatweek', 'Fewest messages this week'],
+  ['voiceweek', 'Most time in voice this week'], ['-voiceweek', 'Least time in voice this week'],
   ['playweek', 'Most played this week'], ['-playweek', 'Least played this week'], ['playtime', 'Most time played'],
   ['-playtime', 'Least time played'],
 ];
@@ -74,18 +77,23 @@ function GameCell({ p }) {
 
 function DiscordCell({ p, channels }) {
   if (!p.discordId || !p.inServer) return <div className="when"><span>—</span></div>;
-  if (!p.discord?.lastMessageAt) return <div className="when"><b className="bad">Never</b><span>no messages seen</span></div>;
+  const last = lastOnDiscord(p);
+  if (!last) return <div className="when"><b className="bad">Never</b><span>no messages or voice seen</span></div>;
   const channel = channels?.find((c) => c.id === p.discord.lastChannelId);
   const c = p.chat;
+  const v = p.voice;
+  const title = [
+    p.discord.lastMessageAt && `Last message ${day(p.discord.lastMessageAt)}${channel ? ` in #${channel.name}` : ''}`,
+    p.discord.lastVoiceAt && `Last in voice ${day(p.discord.lastVoiceAt)}`,
+  ].filter(Boolean).join(' · ');
   return (
-    <div className="when" title={`${day(p.discord.lastMessageAt)}${channel ? ` in #${channel.name}` : ''}`}>
-      <b className={p.inactiveDiscord ? 'bad' : ''}>{ago(p.discord.lastMessageAt)}</b>
-      {c ? (
+    <div className="when" title={title}>
+      <b className={p.inactiveDiscord ? 'bad' : ''}>{ago(last)}</b>
+      {c && (
         <span className={p.lowChat || c.checkIns ? 'warn-text' : ''} title={c.checkIns ? 'Posts most days, about one message each time' : undefined}>
-          {c.week} {c.week === 1 ? 'message' : 'messages'} this week{c.checkIns ? ' · check-ins' : ''}
+          {c.week} {c.week === 1 ? 'msg' : 'msgs'}
+          {v?.withOthersWeek ? ` · ${hours(v.withOthersWeek)} voice` : ''} this week{c.checkIns ? ' · check-ins' : ''}
         </span>
-      ) : (
-        channel && <span>#{channel.name}</span>
       )}
     </div>
   );
@@ -137,11 +145,11 @@ function Person({ p, channels, showGroups, selected, onSelect, onOpen, ...action
         </div>
       </div>
       <div>
-        <span className="cell-label">Last played</span>
+        <span className="cell-label">Game</span>
         <GameCell p={p} />
       </div>
       <div>
-        <span className="cell-label">Last message</span>
+        <span className="cell-label">Discord</span>
         <DiscordCell p={p} channels={channels} />
       </div>
       <div>
@@ -173,13 +181,15 @@ function toCsv(rows) {
   const head = [
     'Name', 'Roblox username', 'Roblox ID', 'Discord name', 'Discord ID', 'Groups', 'Accounts', 'Last played', 'Hours played',
     'Minutes played (7 days)', 'Minutes played (30 days)', 'Days played (30)', 'Last message', 'Messages (7 days)',
-    'Messages (30 days)', 'Days chatted (30)', 'Messages per day chatted', 'Status',
+    'Messages (30 days)', 'Days chatted (30)', 'Messages per day chatted', 'Last in voice', 'Voice minutes with others (7 days)',
+    'Voice minutes with others (30 days)', 'Voice minutes in all (30 days)', 'Status',
   ];
   const lines = rows.map((p) => [
     p.discordName ?? p.displayName ?? p.username, p.username, p.robloxId, p.discordName, p.discordId, p.groups.join('; '),
     ACCOUNTS[p.account].label, p.game?.online ? 'now' : p.game?.lastSeenAt ?? '', p.game ? (p.game.minutes / 60).toFixed(1) : '',
     p.play?.week, p.play?.month, p.play?.activeDays, p.discord?.lastMessageAt ?? '', p.chat?.week, p.chat?.month,
-    p.chat?.activeDays, p.chat?.perDay, statusLabel(p),
+    p.chat?.activeDays, p.chat?.perDay, p.discord?.lastVoiceAt ?? '', p.voice?.withOthersWeek, p.voice?.withOthersMonth,
+    p.voice?.month, statusLabel(p),
   ]);
   return [head, ...lines].map((l) => l.map(cell).join(',')).join('\n');
 }
@@ -242,6 +252,12 @@ function People({ data, people, guild, busy, filters, setFilters, matchProps, se
 
   return (
     <>
+      {data.scan?.running && (
+        <Notice tone="info">
+          Reading the last {data.scan.days ?? 60} days of chat to fill in the numbers: {data.scan.done} of {data.scan.channels} channels,{' '}
+          {data.scan.messages.toLocaleString()} messages so far. The list updates when it’s done.
+        </Notice>
+      )}
       <div className="stat-grid">
         {quick(`Inactive ${data.settings.inactiveDays}+ days`, 'clock', quiet, quiet ? 'bad' : 'ok', { status: 'inactive' })}
         {quick('Low activity', 'chat', low, low ? 'warn' : '', { status: 'low' })}
@@ -305,8 +321,8 @@ function People({ data, people, guild, busy, filters, setFilters, matchProps, se
                 <Check checked={allShownSelected} indeterminate={!allShownSelected && someShownSelected} onChange={selectShown} label="Select everyone shown" />
               </div>
               <SortHead id="name" label="Person" sort={sort} onSort={(s) => setFilters({ sort: s })} />
-              <SortHead id="played" label="Last played" sort={sort} onSort={(s) => setFilters({ sort: s })} />
-              <SortHead id="message" label="Last message" sort={sort} onSort={(s) => setFilters({ sort: s })} />
+              <SortHead id="played" label="Game" sort={sort} onSort={(s) => setFilters({ sort: s })} />
+              <SortHead id="message" label="Discord" sort={sort} onSort={(s) => setFilters({ sort: s })} />
               <SortHead id="activity" label="Status" sort={sort} onSort={(s) => setFilters({ sort: s })} />
               <span className="sr-only">Actions</span>
             </div>
@@ -342,11 +358,14 @@ function Settings({ data, guild, onSave, hidden }) {
   const setGroup = (i, changes) => setForm({ ...form, groups: form.groups.map((g, j) => (j === i ? { ...g, ...changes } : g)) });
   const days = Number(form.inactiveDays);
   const minMessages = Number(form.minMessagesWeek);
+  const minVoice = Number(form.minVoiceWeek);
   const minMinutes = Number(form.minMinutesWeek);
   const blocked = !Number.isInteger(days) || days < 1 || days > 90
     ? 'Inactive after must be 1 to 90 days'
     : !Number.isInteger(minMessages) || minMessages < 0 || minMessages > 1000
       ? 'Messages a week must be 0 to 1,000'
+      : !Number.isInteger(minVoice) || minVoice < 0 || minVoice > 10000
+        ? 'Minutes in voice a week must be 0 to 10,000'
       : !Number.isInteger(minMinutes) || minMinutes < 0 || minMinutes > 10000
         ? 'Minutes played a week must be 0 to 10,000'
     : form.groups.some((g) => !g.name.trim())
@@ -356,7 +375,7 @@ function Settings({ data, guild, onSave, hidden }) {
         : null;
   const save = async () => {
     setBusy(true);
-    await onSave({ ...form, inactiveDays: days, minMessagesWeek: minMessages, minMinutesWeek: minMinutes });
+    await onSave({ ...form, inactiveDays: days, minMessagesWeek: minMessages, minVoiceWeek: minVoice, minMinutesWeek: minMinutes });
     setBusy(false);
   };
   return (
@@ -381,12 +400,20 @@ function Settings({ data, guild, onSave, hidden }) {
               <span className="muted">days</span>
             </div>
           </Field>
-          <Field label="Low activity below" hint="In the last 7 days. Catches people who drop one message a day or join the game for a minute. 0 turns a minimum off.">
+          <Field label="Low activity on Discord" hint="In the last 7 days, under both: enough messages or enough time talking in voice keeps them active. Voice counts only with someone else there, not deafened.">
             <div className="row" style={{ alignItems: 'center' }}>
+              <span className="muted">Fewer than</span>
               <input type="number" min="0" max="1000" aria-label="Messages a week" value={form.minMessagesWeek} onChange={(e) => setForm({ ...form, minMessagesWeek: e.target.value })} className={blocked?.startsWith('Messages') ? 'invalid' : ''} />
-              <span className="muted">messages a week, or</span>
-              <input type="number" min="0" max="10000" aria-label="Minutes played a week" value={form.minMinutesWeek} onChange={(e) => setForm({ ...form, minMinutesWeek: e.target.value })} className={blocked?.startsWith('Minutes') ? 'invalid' : ''} />
-              <span className="muted">minutes played a week</span>
+              <span className="muted">messages and less than</span>
+              <input type="number" min="0" max="10000" aria-label="Minutes in voice a week" value={form.minVoiceWeek} onChange={(e) => setForm({ ...form, minVoiceWeek: e.target.value })} className={blocked?.startsWith('Minutes in voice') ? 'invalid' : ''} />
+              <span className="muted">minutes in voice</span>
+            </div>
+          </Field>
+          <Field label="Low activity in game" hint="In the last 7 days. 0 turns a minimum off.">
+            <div className="row" style={{ alignItems: 'center' }}>
+              <span className="muted">Less than</span>
+              <input type="number" min="0" max="10000" aria-label="Minutes played a week" value={form.minMinutesWeek} onChange={(e) => setForm({ ...form, minMinutesWeek: e.target.value })} className={blocked?.startsWith('Minutes played') ? 'invalid' : ''} />
+              <span className="muted">minutes played</span>
             </div>
           </Field>
           {form.groups.map((g, i) => (
@@ -450,13 +477,15 @@ function BotAccount({ admin }) {
 
 function Tracking({ data, scanning, onScan }) {
   const { since, scan, game } = data;
+  const back = since.backfilledAt ? day(new Date(new Date(since.backfilledAt).getTime() - 60 * 86_400_000)) : null;
   return (
     <Card
       title="Tracking"
       description={
         <>
-          Game time since <strong>{day(since.game)}</strong>, Discord messages since <strong>{day(since.discord)}</strong>
-          {since.scannedAt ? ` (history scanned ${ago(since.scannedAt)})` : ''}. Only when someone chatted is kept, never what they said.
+          Chat counted back to <strong>{back ?? day(since.discord)}</strong>
+          {since.scannedAt ? ` (history read ${ago(since.scannedAt)})` : ''}; game time and voice since{' '}
+          <strong>{day(since.daily ?? since.game)}</strong>. Only when and how much is kept, never what anyone said.
         </>
       }
       aside={
@@ -471,7 +500,7 @@ function Tracking({ data, scanning, onScan }) {
     >
       <div className="row" style={{ alignItems: 'center' }}>
         <Button icon="refresh" loading={scanning} disabled={scan?.running} onClick={onScan}>
-          {scan?.running ? `Scanning ${scan.done}/${scan.channels} channels…` : 'Scan Discord history'}
+          {scan?.running ? `Reading ${scan.done}/${scan.channels} channels…` : 'Read chat history again'}
         </Button>
         <span className="subtle">
           {scan?.running
@@ -480,7 +509,7 @@ function Tracking({ data, scanning, onScan }) {
               ? `Last scan failed: ${scan.error}`
               : scan
                 ? `Last scan read ${scan.messages.toLocaleString()} messages.`
-                : 'Reads the newest 1,000 messages of every channel, to fill in who chatted before tracking began.'}
+                : 'Reads the last 60 days of every channel and fills in the chat numbers. It ran once by itself.'}
         </span>
       </div>
     </Card>

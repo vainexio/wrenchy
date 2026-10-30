@@ -57,7 +57,8 @@ export async function execute(interaction) {
     const lines = inactive.slice(0, MAX_LINES).map((p) => {
       const game = p.robloxId ? `🎮 ${ago(p.game?.lastSeenAt)}` : '🎮 no Roblox account found';
       const chat = p.discordId && p.inServer ? `💬 ${ago(p.discord?.lastMessageAt)}` : '💬 not in the server';
-      return `${who(p)}\n   ${game} · ${chat}`;
+      const voice = p.discord?.lastVoiceAt ? ` · 🎙️ ${ago(p.discord.lastVoiceAt)}` : '';
+      return `${who(p)}\n   ${game} · ${chat}${voice}`;
     });
     if (inactive.length > MAX_LINES) lines.push(`…and ${inactive.length - MAX_LINES} more (see the dashboard’s Team tab).`);
     return new EmbedBuilder()

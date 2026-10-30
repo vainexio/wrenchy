@@ -17,7 +17,7 @@ export function hours(minutes) {
 export const STATUSES = [
   { value: 'inactive', label: 'Inactive', test: (p) => p.inactiveGame || p.inactiveDiscord },
   { value: 'game', label: 'Not playing', test: (p) => p.inactiveGame },
-  { value: 'discord', label: 'Not chatting', test: (p) => p.inactiveDiscord },
+  { value: 'discord', label: 'Quiet on Discord', test: (p) => p.inactiveDiscord },
   { value: 'low', label: 'Low activity', test: (p) => Boolean(p.lowChat || p.lowGame) },
   { value: 'checkins', label: 'Checks in only', test: (p) => Boolean(p.chat?.checkIns) },
   { value: 'active', label: 'Active', test: (p) => !p.inactiveGame && !p.inactiveDiscord && !p.lowChat && !p.lowGame },
@@ -99,6 +99,12 @@ export function similarFirst(list, name, names) {
   if (!word) return list;
   const near = rankByName(list, word, names).map((r) => r.item);
   return [...near, ...list.filter((x) => !near.includes(x))];
+}
+
+/** When they were last on Discord: a message or a minute in voice, whichever was later. */
+export function lastOnDiscord(p) {
+  const times = [p.discord?.lastMessageAt, p.discord?.lastVoiceAt].filter(Boolean).map((t) => new Date(t));
+  return times.length ? new Date(Math.max(...times)) : null;
 }
 
 /** Whether a notice can reach them: a Discord account still in the server. */

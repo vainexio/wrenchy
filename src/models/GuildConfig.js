@@ -117,8 +117,10 @@ const teamSchema = new mongoose.Schema(
     inactiveDays: { type: Number, default: 7 },
     // (below these in the last 7 days = "Low activity", even when seen recently; 0 = off)
     minMessagesWeek: { type: Number, default: 10 },
+    minVoiceWeek: { type: Number, default: 30 }, // (minutes in voice with others: either minimum keeps them active on Discord)
     minMinutesWeek: { type: Number, default: 60 },
     dailySince: { type: Date, default: null }, // (when the bot began counting per day)
+    backfilledAt: { type: Date, default: null }, // (the one-time fill-in of the last 60 days of chat)
     discordSince: { type: Date, default: null }, // (when the bot began counting messages here)
     scannedAt: { type: Date, default: null }, // (the last history scan)
   },

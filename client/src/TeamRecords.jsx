@@ -62,6 +62,9 @@ export function RecordRow({ r, showWho = true, action }) {
                 {s.messagesWeek !== undefined && s.messagesWeek !== null && (
                   <div><span>Messages then</span><b>{s.messagesWeek} in 7 days</b><small>{s.messagesMonth} in 30 days, on {s.chatDays} days</small></div>
                 )}
+                {s.voiceWeek !== undefined && s.voiceWeek !== null && (
+                  <div><span>Voice then</span><b>{hours(s.voiceWeek)} in 7 days</b><small>{hours(s.voiceMonth)} in 30 days, with others</small></div>
+                )}
                 {s.minutesWeek !== undefined && s.minutesWeek !== null && (
                   <div><span>Played then</span><b>{hours(s.minutesWeek)} in 7 days</b><small>{hours(s.minutesMonth)} in 30 days, on {s.playDays} days</small></div>
                 )}

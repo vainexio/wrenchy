@@ -67,6 +67,21 @@ export function chatStats(docs, days) {
   };
 }
 
+/** Voice over the window (minutes): { daily: [minutes with others per day], week, month, withOthersWeek, withOthersMonth, activeDays }. */
+export function voiceStats(docs, days) {
+  const by = new Map(docs.map((d) => [d.day, d]));
+  const all = days.map((d) => by.get(d)?.voiceMinutes ?? 0);
+  const daily = days.map((d) => by.get(d)?.voiceWithOthers ?? 0);
+  return {
+    daily,
+    week: sum(all.slice(-7)),
+    month: sum(all),
+    withOthersWeek: sum(daily.slice(-7)),
+    withOthersMonth: sum(daily),
+    activeDays: daily.filter(Boolean).length,
+  };
+}
+
 /** Game time over the window: { daily: [minutes per day], week, month, activeDays, sessions } (minutes). */
 export function playStats(docs, days) {
   const by = new Map(docs.map((d) => [d.day, d]));
@@ -111,7 +126,8 @@ function daysSince(date) {
  * { robloxId, username, displayName, robloxRoles, discordId, discordName, discordAvatar, discordRoles, matchedBy,
  *   game: { lastSeenAt, online, minutes, sessions, game }, discord: { lastMessageAt, lastChannelId, messages },
  *   gameDays, discordDays, inactiveGame, inactiveDiscord,
- *   chat: chatStats | null, play: playStats | null, lowChat, lowGame (below the weekly minimums; null = not judged) }
+ *   chat: chatStats | null, voice: voiceStats | null, play: playStats | null,
+ *   lowChat (on Discord: under both the messages and the voice minimum), lowGame (null = not judged) }
  */
 export async function buildTeam(guild, team) {
   const groupId = config.defaultRobloxGroupId;
@@ -194,15 +210,23 @@ export async function buildTeam(guild, team) {
         ? { lastSeenAt: play.lastSeenAt, online, minutes: play.minutes, sessions: play.sessions, game: play.game }
         : null;
       const chat = p.discordId ? chatOf.get(p.discordId) : null;
-      p.discord = chat ? { lastMessageAt: chat.lastMessageAt, lastChannelId: chat.lastChannelId, messages: chat.messages } : null;
+      p.discord = chat ? { lastMessageAt: chat.lastMessageAt, lastChannelId: chat.lastChannelId, messages: chat.messages, lastVoiceAt: chat.lastVoiceAt ?? null } : null;
       p.gameDays = online ? 0 : daysSince(play?.lastSeenAt);
-      p.discordDays = daysSince(chat?.lastMessageAt);
+      // (on Discord = chatting or in voice, whichever was later)
+      const lastOnDiscord = [chat?.lastMessageAt, chat?.lastVoiceAt].filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0];
+      p.discordDays = daysSince(lastOnDiscord);
       // (inactive = not seen for the set days, or never seen at all; nothing to judge without the account)
       p.inactiveGame = p.robloxId ? p.gameDays === null || p.gameDays >= team.inactiveDays : null;
       p.inactiveDiscord = p.discordId && p.inServer ? p.discordDays === null || p.discordDays >= team.inactiveDays : null;
       p.chat = p.discordId && p.inServer ? chatStats(daily.chatOf.get(p.discordId) ?? [], daily.days) : null;
+      p.voice = p.discordId && p.inServer ? voiceStats(daily.chatOf.get(p.discordId) ?? [], daily.days) : null;
       p.play = p.robloxId ? playStats(daily.playOf.get(p.robloxId) ?? [], daily.days) : null;
-      p.lowChat = judged && p.chat && team.minMessagesWeek > 0 ? p.chat.week < team.minMessagesWeek : null;
+      // (enough messages or enough time talking in voice: either keeps them active on Discord)
+      const minMessages = team.minMessagesWeek ?? 0;
+      const minVoice = team.minVoiceWeek ?? 0;
+      p.lowChat = judged && p.chat && (minMessages > 0 || minVoice > 0)
+        ? !((minMessages > 0 && p.chat.week >= minMessages) || (minVoice > 0 && p.voice.withOthersWeek >= minVoice))
+        : null;
       p.lowGame = judged && p.play && team.minMinutesWeek > 0 ? p.play.week < team.minMinutesWeek : null;
     }
     // the least active first

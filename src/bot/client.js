@@ -22,9 +22,10 @@ const INVITE_PERMISSIONS = new PermissionsBitField([
 ]).bitfield;
 
 // Guild Members (privileged: on in the Developer Portal) lists who holds which role for the Team tab; Guild Messages
-// tells when members chat (the time only: no Message Content intent, so the bot never sees the text).
+// tells when members chat (the time only: no Message Content intent, so the bot never sees the text); Guild Voice
+// States says who's in which voice channel (time in voice).
 export const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates],
 });
 
 async function registerCommands(guild) {

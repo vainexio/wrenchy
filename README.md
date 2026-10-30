@@ -60,7 +60,7 @@ The dashboard's **Team** tab lists every tester and staff member with when they 
 - **Last played:** Mangingisda (`ServerScriptService.Modules.TeamActivity`) reports group members (rank 2+) to `POST /api/game/presence` as they join, every 5 minutes while they play, and as they leave (same `X-Wrenchy-Key`). The tab shows who's in game now and the hours played since tracking began.
 - **Last message:** Wrenchy notes when each member sends a message and in which channel, never the text (Guild Messages intent, no Message Content). **Scan Discord history** fills in the time before tracking began from the newest 1,000 messages of every channel it can read.
 
-- **How much they take part**, not only when they were last seen (one message a day keeps "last message" fresh): Wrenchy counts per day, in Manila time, each member's messages, replies and channels, and each player's minutes and sessions (kept 120 days; **Scan Discord history** fills in the last 60 days of chat). The list shows this week's messages and time played; someone's panel shows the last 30 days as charts with days active and messages per active day. **Low activity**: under the weekly minimums (Settings: 10 messages, 60 minutes by default; 0 = off). **Checks in only**: chatted on 7+ of the last 30 days but about one message each time.
+- **How much they take part**, not only when they were last seen (one message a day keeps "last message" fresh): Wrenchy counts per day, in Manila time, each member's messages, replies and channels, their minutes in voice (and of those, with someone else there and not deafened), and each player's minutes and sessions (kept 120 days). The first time it starts it reads the last 60 days of every channel by itself to fill in the chat numbers (**Read chat history again** under Settings); voice and game time can't be read back, so they count from then on. The list shows this week's messages and time played; someone's panel shows the last 30 days as charts with days active and messages per active day. **Low activity**: under the weekly minimums (Settings): on Discord, fewer than 10 messages and less than 30 minutes talking in voice (either one is enough); in game, less than 60 minutes played. 0 turns a minimum off. **Checks in only**: chatted on 7+ of the last 30 days but about one message each time.
 - **Managing the team** (sections of the Team tab):
   - **People**: click someone for their panel (accounts, activity, history; change their Roblox role, send a notice, suspend or remove them). Tick several for the same actions at once.
   - **Add member**: their Discord account, their Roblox account, the group and role. Wrenchy gives the Roblox role (accepting their join request if they sent one) and the group's Discord roles.
@@ -71,7 +71,7 @@ The dashboard's **Team** tab lists every tester and staff member with when they 
 
 `/inactive [group] [days]` shows the inactive list in Discord (private reply, dashboard role only).
 
-Needs the **Server Members Intent** in the Developer Portal (Bot → Privileged Gateway Intents) and **Read Message History** for the scan.
+Needs the **Server Members Intent** in the Developer Portal (Bot → Privileged Gateway Intents), **Read Message History** for the scan, and **View Channel** on the voice channels to see who's in them.
 
 ### Dashboard login
 Staff log in with Discord. Only members who have the role in `ADMIN_ROLE_ID` (default `1560157523984646154`) can get in.
