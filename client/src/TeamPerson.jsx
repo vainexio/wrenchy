@@ -1,12 +1,84 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { RecordRow } from './TeamRecords.jsx';
-import { ACCOUNTS, STATUS_TONE, nameOf, played, reachable, statusLabel } from './teamModel.js';
+import { ACCOUNTS, STATUS_TONE, hours, nameOf, reachable, statusLabel } from './teamModel.js';
 import { MatchActions } from './teamPickers.jsx';
-import { Badge, Button, Field, Icon, Modal, Notice, ago, day, useToast } from './ui.jsx';
+import { Badge, Button, Field, Icon, Modal, Notice, ago, useToast } from './ui.jsx';
 
 // One person, opened from the People list: their accounts, activity and history, and what can be done to them:
 // change their Roblox role, send them a notice, suspend or remove them.
+
+/**
+ * The last 30 days as bars, oldest first: `values` per day, `fmt` for a value. `floor` is the least a full bar stands
+ * for, so one message a day shows as a stub, not a wall of full bars.
+ */
+function DayBars({ values, fmt, label, floor }) {
+  const max = Math.max(...values, floor);
+  const today = new Date();
+  return (
+    <div className="day-bars" role="img" aria-label={label}>
+      {values.map((v, i) => {
+        const date = new Date(today.getTime() - (values.length - 1 - i) * 86_400_000);
+        return (
+          <span key={i} className={`day-bar${v ? '' : ' none'}`} title={`${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}: ${fmt(v)}`}>
+            <span style={{ height: `${v ? Math.max(6, (v / max) * 100) : 0}%` }} />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChatActivity({ p, minimum, channel }) {
+  const c = p.chat;
+  if (!p.discordId || !p.inServer) return <p className="subtle">No Discord account in the server.</p>;
+  return (
+    <div className="activity">
+      <div className="activity-head">
+        <div>
+          <b className={p.lowChat ? 'warn-text' : ''}>{c?.week ?? 0}</b> {c?.week === 1 ? 'message' : 'messages'} this week
+        </div>
+        <span className="subtle">Last {p.discord?.lastMessageAt ? `${ago(p.discord.lastMessageAt)}${channel ? ` in #${channel.name}` : ''}` : 'never'}</span>
+      </div>
+      {c && <DayBars values={c.daily} fmt={(v) => `${v} ${v === 1 ? 'message' : 'messages'}`} label="Messages per day, last 30 days" floor={10} />}
+      {c && (
+        <div className="facts four">
+          <div><span>30 days</span><b>{c.month}</b><small>messages</small></div>
+          <div><span>Days chatted</span><b>{c.activeDays} of 30</b></div>
+          <div><span>Per day chatted</span><b>{c.perDay}</b><small>messages</small></div>
+          <div><span>Replies · channels</span><b>{c.replies} · {c.channels}</b></div>
+        </div>
+      )}
+      {c?.checkIns && <Notice tone="warn">Posts on most days but about one message each time: keeping “last message” fresh without really taking part.</Notice>}
+      {p.lowChat && !c?.checkIns && <Notice tone="warn">Below the minimum of {minimum} messages a week.</Notice>}
+    </div>
+  );
+}
+
+function GameActivity({ p, minimum }) {
+  const g = p.play;
+  if (!p.robloxId) return <p className="subtle">No Roblox account.</p>;
+  return (
+    <div className="activity">
+      <div className="activity-head">
+        <div>
+          <b className={p.lowGame ? 'warn-text' : ''}>{hours(g?.week ?? 0)}</b> played this week
+        </div>
+        <span className="subtle">{p.game?.online ? 'In game now' : `Last ${p.game ? ago(p.game.lastSeenAt) : 'never'}`}</span>
+      </div>
+      {g && <DayBars values={g.daily} fmt={(v) => hours(v)} label="Minutes played per day, last 30 days" floor={60} />}
+      {g && (
+        <div className="facts four">
+          <div><span>30 days</span><b>{hours(g.month)}</b></div>
+          <div><span>Days played</span><b>{g.activeDays} of 30</b></div>
+          <div><span>Sessions</span><b>{g.sessions}</b></div>
+          <div><span>All time</span><b>{hours(p.game?.minutes ?? 0)}</b></div>
+        </div>
+      )}
+      {p.lowGame && <Notice tone="warn">Below the minimum of {minimum} minutes played a week.</Notice>}
+    </div>
+  );
+}
 
 const TAKE_OFF = {
   suspended: { verb: 'Suspend', icon: 'pause', done: 'Suspended' },
@@ -157,7 +229,7 @@ function RoleControl({ p, guildId, admin, onTeam, onError, onDone }) {
   );
 }
 
-export function PersonPanel({ p, guildId, admin, channels, matchProps, onClose, onTeam, onNotice, onTakeOff, onError }) {
+export function PersonPanel({ p, guildId, admin, settings, channels, matchProps, onClose, onTeam, onNotice, onTakeOff, onError }) {
   const [records, setRecords] = useState(null);
   const [reload, setReload] = useState(0);
   useEffect(() => {
@@ -226,19 +298,13 @@ export function PersonPanel({ p, guildId, admin, channels, matchProps, onClose, 
           </section>
 
           <section>
-            <h3>Activity</h3>
-            <div className="facts">
-              <div>
-                <span>Last played</span>
-                <b className={p.inactiveGame ? 'bad' : ''}>{!p.robloxId ? '—' : p.game?.online ? 'In game now' : p.game ? ago(p.game.lastSeenAt) : 'Never'}</b>
-                <small>{p.game ? `${played(p.game.minutes)} · ${p.game.game}` : p.robloxId ? 'since tracking began' : ''}</small>
-              </div>
-              <div>
-                <span>Last message</span>
-                <b className={p.inactiveDiscord ? 'bad' : ''}>{!p.discordId ? '—' : p.discord?.lastMessageAt ? ago(p.discord.lastMessageAt) : 'Never'}</b>
-                <small>{p.discord?.lastMessageAt ? `${day(p.discord.lastMessageAt)}${channel ? ` · #${channel.name}` : ''}` : ''}</small>
-              </div>
-            </div>
+            <h3>Chat, last 30 days</h3>
+            <ChatActivity p={p} minimum={settings.minMessagesWeek} channel={channel} />
+          </section>
+
+          <section>
+            <h3>Game, last 30 days</h3>
+            <GameActivity p={p} minimum={settings.minMinutesWeek} />
           </section>
 
           <section>

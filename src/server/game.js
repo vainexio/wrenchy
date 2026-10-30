@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import { EmbedBuilder, escapeMarkdown } from 'discord.js';
 import express from 'express';
 import { config } from '../config.js';
-import { PlayerActivity } from '../models/Activity.js';
+import { PlayerActivity, PlayerDaily } from '../models/Activity.js';
+import { dayKey } from '../team/days.js';
 import { rememberRoles } from '../roblox/api.js';
 import { HttpError } from './errors.js';
 
@@ -106,7 +107,9 @@ export function createGameRouter(client) {
     const gameName = clip(req.body?.game, 40);
     const players = Array.isArray(req.body?.players) ? req.body.players.slice(0, 50) : [];
     const now = new Date();
+    const day = dayKey(now);
     const ops = [];
+    const daily = [];
     for (const raw of players) {
       const userId = Number(raw?.userId);
       const username = clip(raw?.username, 40);
@@ -121,8 +124,15 @@ export function createGameRouter(client) {
           upsert: true,
         },
       });
+      daily.push({
+        updateOne: {
+          filter: { robloxId: userId, day },
+          update: { $inc: { minutes, sessions: event === 'join' ? 1 : 0 } },
+          upsert: true,
+        },
+      });
     }
-    if (ops.length) await PlayerActivity.bulkWrite(ops, { ordered: false });
+    if (ops.length) await Promise.all([PlayerActivity.bulkWrite(ops, { ordered: false }), PlayerDaily.bulkWrite(daily, { ordered: false })]);
     res.json({ ok: true, recorded: ops.length });
   });
 

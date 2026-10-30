@@ -5,14 +5,22 @@ import { rankByName } from '../../src/shared/search.js';
 
 export function played(minutes) {
   if (!minutes) return 'no time yet';
-  return minutes < 60 ? `${Math.round(minutes)}m played` : `${(minutes / 60).toFixed(minutes < 600 ? 1 : 0)}h played`;
+  return `${hours(minutes)} played`;
+}
+
+/** 0m, 45m, 3.5h, 12h */
+export function hours(minutes) {
+  if (!minutes) return '0m';
+  return minutes < 60 ? `${Math.round(minutes)}m` : `${(minutes / 60).toFixed(minutes < 600 ? 1 : 0)}h`;
 }
 
 export const STATUSES = [
   { value: 'inactive', label: 'Inactive', test: (p) => p.inactiveGame || p.inactiveDiscord },
   { value: 'game', label: 'Not playing', test: (p) => p.inactiveGame },
   { value: 'discord', label: 'Not chatting', test: (p) => p.inactiveDiscord },
-  { value: 'active', label: 'Active', test: (p) => !p.inactiveGame && !p.inactiveDiscord },
+  { value: 'low', label: 'Low activity', test: (p) => Boolean(p.lowChat || p.lowGame) },
+  { value: 'checkins', label: 'Checks in only', test: (p) => Boolean(p.chat?.checkIns) },
+  { value: 'active', label: 'Active', test: (p) => !p.inactiveGame && !p.inactiveDiscord && !p.lowChat && !p.lowGame },
   { value: 'online', label: 'In game now', test: (p) => p.game?.online },
 ];
 
@@ -46,9 +54,10 @@ export function statusLabel(p) {
   if (p.inactiveGame && p.inactiveDiscord) return 'Inactive';
   if (p.inactiveGame) return 'Not playing';
   if (p.inactiveDiscord) return 'Quiet';
+  if (p.lowChat || p.lowGame) return 'Low activity';
   return 'Active';
 }
-export const STATUS_TONE = { Playing: 'ok', Active: 'ok', Inactive: 'bad', 'Not playing': 'warn', Quiet: 'warn' };
+export const STATUS_TONE = { Playing: 'ok', Active: 'ok', Inactive: 'bad', 'Not playing': 'warn', Quiet: 'warn', 'Low activity': 'warn' };
 
 export const nameOf = (p) => p.discordName ?? p.displayName ?? p.username ?? 'Someone';
 

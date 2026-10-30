@@ -5,6 +5,7 @@ import { getGuildConfig } from '../models/GuildConfig.js';
 import { RobloxLink } from '../models/RobloxLink.js';
 import { Notice, TeamRecord } from '../models/TeamRecord.js';
 import { forgetRoleMembers, getGroupRoles, getRobloxUser, resolveUsernames } from '../roblox/api.js';
+import { chatStats, loadDaily, playStats } from '../team/roster.js';
 import { RobloxBotError, acceptJoinRequest, botStatus, groupRoleOf, setGroupRole } from '../roblox/rankBot.js';
 import { updateMember } from '../roblox/verified.js';
 import { HttpError } from './errors.js';
@@ -47,11 +48,20 @@ function teamRoleIds(team) {
 
 /** Their activity and roles right now, kept with each record. */
 async function snapshotOf(guild, robloxId, member, robloxRole) {
-  const [play, chat] = await Promise.all([
+  const [play, chat, daily] = await Promise.all([
     robloxId ? PlayerActivity.findOne({ robloxId }).lean() : null,
     member ? DiscordActivity.findOne({ guildId: guild.id, userId: member.id }).lean() : null,
+    loadDaily(guild.id, member ? [member.id] : [], robloxId ? [robloxId] : []),
   ]);
+  const c = member ? chatStats(daily.chatOf.get(member.id) ?? [], daily.days) : null;
+  const g = robloxId ? playStats(daily.playOf.get(robloxId) ?? [], daily.days) : null;
   return {
+    messagesWeek: c?.week ?? null,
+    messagesMonth: c?.month ?? null,
+    chatDays: c?.activeDays ?? null,
+    minutesWeek: g?.week ?? null,
+    minutesMonth: g?.month ?? null,
+    playDays: g?.activeDays ?? null,
     lastPlayedAt: play?.lastSeenAt ?? null,
     minutesPlayed: Math.round(play?.minutes ?? 0),
     sessions: play?.sessions ?? 0,

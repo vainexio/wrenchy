@@ -34,6 +34,41 @@ discordActivitySchema.index({ guildId: 1, userId: 1 }, { unique: true });
 
 export const DiscordActivity = mongoose.model('DiscordActivity', discordActivitySchema);
 
+// Per member per day (Manila time): how much they chatted, for the Team tab's activity numbers. One message a day keeps
+// "last message" fresh but isn't taking part (the owner, 2026-10-30: "they can bypass activity by sending 1 useless
+// message everyday"). Still never the text: the count, how many were replies, and which channels. Kept 120 days.
+const DAILY_KEEP_S = 120 * 86_400;
+const discordDailySchema = new mongoose.Schema(
+  {
+    guildId: { type: String, required: true },
+    userId: { type: String, required: true },
+    day: { type: String, required: true }, // ("2026-10-30")
+    messages: { type: Number, default: 0 },
+    replies: { type: Number, default: 0 },
+    channels: { type: [String], default: [] },
+  },
+  { timestamps: true },
+);
+discordDailySchema.index({ guildId: 1, userId: 1, day: 1 }, { unique: true });
+discordDailySchema.index({ createdAt: 1 }, { expireAfterSeconds: DAILY_KEEP_S });
+
+export const DiscordDaily = mongoose.model('DiscordDaily', discordDailySchema);
+
+// Per player per day: minutes played and sessions started (the game's presence reports).
+const playerDailySchema = new mongoose.Schema(
+  {
+    robloxId: { type: Number, required: true },
+    day: { type: String, required: true },
+    minutes: { type: Number, default: 0 },
+    sessions: { type: Number, default: 0 },
+  },
+  { timestamps: true },
+);
+playerDailySchema.index({ robloxId: 1, day: 1 }, { unique: true });
+playerDailySchema.index({ createdAt: 1 }, { expireAfterSeconds: DAILY_KEEP_S });
+
+export const PlayerDaily = mongoose.model('PlayerDaily', playerDailySchema);
+
 // A Roblox account matched to a Discord account by hand on the dashboard (for testers who never linked and whose
 // Discord name doesn't give them away). Only for the Team tab: it gives no roles, unlike a RobloxLink.
 const teamMatchSchema = new mongoose.Schema(

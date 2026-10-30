@@ -1,7 +1,8 @@
 import { config } from '../config.js';
-import { DiscordActivity, PlayerActivity, TeamMatch } from '../models/Activity.js';
+import { DiscordActivity, DiscordDaily, PlayerActivity, PlayerDaily, TeamMatch } from '../models/Activity.js';
 import { RobloxLink } from '../models/RobloxLink.js';
 import { getKnownGroupRoles, getRoleMembers } from '../roblox/api.js';
+import { lastDays } from './days.js';
 
 // The Team tab and /inactive: everyone in each team group (Testers, Staff...), from the Roblox group's role lists and
 // the server's Discord roles, joined into one row per person, with when they last played and last chatted.
@@ -41,6 +42,66 @@ function namesOf(member) {
   return names;
 }
 
+// ------------------------------------------------------------------ activity numbers (from the daily counts)
+export const WINDOW_DAYS = 30;
+const sum = (list) => list.reduce((a, b) => a + b, 0);
+// (posting most days but about one message each time: keeping "last message" fresh without taking part)
+const CHECK_IN_DAYS = 7;
+const CHECK_IN_PER_DAY = 1.5;
+
+/** Chat over the window: { daily: [messages per day, oldest first], week, month, activeDays, replies, channels, perDay }. */
+export function chatStats(docs, days) {
+  const by = new Map(docs.map((d) => [d.day, d]));
+  const daily = days.map((d) => by.get(d)?.messages ?? 0);
+  const activeDays = daily.filter(Boolean).length;
+  const month = sum(daily);
+  return {
+    daily,
+    week: sum(daily.slice(-7)),
+    month,
+    activeDays,
+    replies: sum(docs.map((d) => d.replies ?? 0)),
+    channels: new Set(docs.flatMap((d) => d.channels ?? [])).size,
+    perDay: activeDays ? Math.round((month / activeDays) * 10) / 10 : 0,
+    checkIns: activeDays >= CHECK_IN_DAYS && month / activeDays <= CHECK_IN_PER_DAY,
+  };
+}
+
+/** Game time over the window: { daily: [minutes per day], week, month, activeDays, sessions } (minutes). */
+export function playStats(docs, days) {
+  const by = new Map(docs.map((d) => [d.day, d]));
+  const daily = days.map((d) => Math.round(by.get(d)?.minutes ?? 0));
+  return {
+    daily,
+    week: sum(daily.slice(-7)),
+    month: sum(daily),
+    activeDays: daily.filter(Boolean).length,
+    sessions: sum(docs.map((d) => d.sessions ?? 0)),
+  };
+}
+
+/** The daily counts of these people over the window: { chatOf: Map(userId -> docs), playOf: Map(robloxId -> docs), days }. */
+export async function loadDaily(guildId, discordIds, robloxIds) {
+  const days = lastDays(WINDOW_DAYS);
+  const [chat, play] = await Promise.all([
+    discordIds.length ? DiscordDaily.find({ guildId, userId: { $in: discordIds }, day: { $gte: days[0] } }).lean() : [],
+    robloxIds.length ? PlayerDaily.find({ robloxId: { $in: robloxIds }, day: { $gte: days[0] } }).lean() : [],
+  ]);
+  const group = (docs, key) => {
+    const map = new Map();
+    for (const d of docs) map.set(d[key], [...(map.get(d[key]) ?? []), d]);
+    return map;
+  };
+  return { chatOf: group(chat, 'userId'), playOf: group(play, 'robloxId'), days };
+}
+
+/** Whether there's a full week of daily counts to judge "Low activity" by (or a history scan filled it in). */
+function weekCounted(team) {
+  if (!team.dailySince) return false;
+  const since = new Date(team.dailySince).getTime();
+  return Date.now() - since >= 7 * 86_400_000 || Boolean(team.scannedAt && new Date(team.scannedAt).getTime() > since);
+}
+
 function daysSince(date) {
   return date ? (Date.now() - new Date(date).getTime()) / 86_400_000 : null;
 }
@@ -49,7 +110,8 @@ function daysSince(date) {
  * The team, one entry per group: { name, people: [...] } and the settings it was built with. Each person:
  * { robloxId, username, displayName, robloxRoles, discordId, discordName, discordAvatar, discordRoles, matchedBy,
  *   game: { lastSeenAt, online, minutes, sessions, game }, discord: { lastMessageAt, lastChannelId, messages },
- *   gameDays, discordDays, inactiveGame, inactiveDiscord }
+ *   gameDays, discordDays, inactiveGame, inactiveDiscord,
+ *   chat: chatStats | null, play: playStats | null, lowChat, lowGame (below the weekly minimums; null = not judged) }
  */
 export async function buildTeam(guild, team) {
   const groupId = config.defaultRobloxGroupId;
@@ -111,10 +173,12 @@ export async function buildTeam(guild, team) {
     const list = [...people.values()];
     const robloxIds = list.map((p) => p.robloxId).filter(Boolean);
     const discordIds = list.map((p) => p.discordId).filter(Boolean);
-    const [plays, chats] = await Promise.all([
+    const [plays, chats, daily] = await Promise.all([
       PlayerActivity.find({ robloxId: { $in: robloxIds } }).lean(),
       DiscordActivity.find({ guildId: guild.id, userId: { $in: discordIds } }).lean(),
+      loadDaily(guild.id, discordIds, robloxIds),
     ]);
+    const judged = weekCounted(team);
     const playOf = new Map(plays.map((a) => [a.robloxId, a]));
     const chatOf = new Map(chats.map((a) => [a.userId, a]));
 
@@ -136,6 +200,10 @@ export async function buildTeam(guild, team) {
       // (inactive = not seen for the set days, or never seen at all; nothing to judge without the account)
       p.inactiveGame = p.robloxId ? p.gameDays === null || p.gameDays >= team.inactiveDays : null;
       p.inactiveDiscord = p.discordId && p.inServer ? p.discordDays === null || p.discordDays >= team.inactiveDays : null;
+      p.chat = p.discordId && p.inServer ? chatStats(daily.chatOf.get(p.discordId) ?? [], daily.days) : null;
+      p.play = p.robloxId ? playStats(daily.playOf.get(p.robloxId) ?? [], daily.days) : null;
+      p.lowChat = judged && p.chat && team.minMessagesWeek > 0 ? p.chat.week < team.minMessagesWeek : null;
+      p.lowGame = judged && p.play && team.minMinutesWeek > 0 ? p.play.week < team.minMinutesWeek : null;
     }
     // the least active first
     const score = (p) => Math.min(p.gameDays ?? 1e6, p.discordDays ?? 1e6);

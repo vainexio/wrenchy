@@ -115,6 +115,10 @@ const teamSchema = new mongoose.Schema(
   {
     groups: { type: [teamGroupSchema], default: () => DEFAULT_TEAM_GROUPS },
     inactiveDays: { type: Number, default: 7 },
+    // (below these in the last 7 days = "Low activity", even when seen recently; 0 = off)
+    minMessagesWeek: { type: Number, default: 10 },
+    minMinutesWeek: { type: Number, default: 60 },
+    dailySince: { type: Date, default: null }, // (when the bot began counting per day)
     discordSince: { type: Date, default: null }, // (when the bot began counting messages here)
     scannedAt: { type: Date, default: null }, // (the last history scan)
   },

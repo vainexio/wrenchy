@@ -8,7 +8,7 @@ import TeamNotices from './TeamNotices.jsx';
 import { PersonPanel, TakeOffDialog } from './TeamPerson.jsx';
 import TeamRecords from './TeamRecords.jsx';
 import {
-  ACCOUNTS, ACCOUNT_FILTERS, STATUSES, STATUS_TONE, mergePeople, nameOf, namesOf, played, reachable, statusLabel,
+  ACCOUNTS, ACCOUNT_FILTERS, STATUSES, STATUS_TONE, hours, mergePeople, nameOf, namesOf, played, reachable, statusLabel,
 } from './teamModel.js';
 import { MatchActions } from './teamPickers.jsx';
 import {
@@ -28,11 +28,16 @@ const SORTS = {
   played: { label: 'Last played', key: (p) => (p.game?.online ? -1 : (p.gameDays ?? 1e6)) },
   message: { label: 'Last message', key: (p) => p.discordDays ?? 1e6 },
   playtime: { label: 'Time played', key: (p) => -(p.game?.minutes ?? 0) },
+  // (null: nothing to count, last either way)
+  chatweek: { label: 'Messages this week', key: (p) => (p.chat ? -p.chat.week : null) },
+  playweek: { label: 'Played this week', key: (p) => (p.play ? -p.play.week : null) },
 };
 const SORT_OPTIONS = [
   ['activity', 'Least active first'], ['-activity', 'Most active first'], ['name', 'Name A–Z'], ['-name', 'Name Z–A'],
   ['played', 'Played most recently'], ['-played', 'Played longest ago'], ['message', 'Chatted most recently'],
-  ['-message', 'Chatted longest ago'], ['playtime', 'Most time played'], ['-playtime', 'Least time played'],
+  ['-message', 'Chatted longest ago'], ['chatweek', 'Most messages this week'], ['-chatweek', 'Fewest messages this week'],
+  ['playweek', 'Most played this week'], ['-playweek', 'Least played this week'], ['playtime', 'Most time played'],
+  ['-playtime', 'Least time played'],
 ];
 
 function sortPeople(list, sort) {
@@ -41,26 +46,28 @@ function sortPeople(list, sort) {
   const name = SORTS.name.key;
   return list
     .map((p) => [key(p), p])
-    .sort(([a, pa], [b, pb]) => (a < b ? -1 : a > b ? 1 : 0) * (desc ? -1 : 1) || name(pa).localeCompare(name(pb)))
+    .sort(([a, pa], [b, pb]) =>
+      (a === null) - (b === null) || (a < b ? -1 : a > b ? 1 : 0) * (desc ? -1 : 1) || name(pa).localeCompare(name(pb)))
     .map(([, p]) => p);
 }
 
 // ------------------------------------------------------------------ the cells
 function GameCell({ p }) {
   if (!p.robloxId) return <div className="when"><span>—</span></div>;
+  const week = p.play ? <span className={p.lowGame ? 'warn-text' : ''}>{hours(p.play.week)} this week</span> : <span>{played(p.game?.minutes)}</span>;
   if (p.game?.online) {
     return (
       <div className="when">
         <b className="ok">● In game now</b>
-        <span>{played(p.game.minutes)}</span>
+        {week}
       </div>
     );
   }
   if (!p.game) return <div className="when"><b className="bad">Never</b><span>since tracking began</span></div>;
   return (
-    <div className="when" title={`${day(p.game.lastSeenAt)} · ${p.game.game}`}>
+    <div className="when" title={`${day(p.game.lastSeenAt)} · ${p.game.game} · ${played(p.game.minutes)} in all`}>
       <b className={p.inactiveGame ? 'bad' : ''}>{ago(p.game.lastSeenAt)}</b>
-      <span>{played(p.game.minutes)}</span>
+      {week}
     </div>
   );
 }
@@ -69,10 +76,17 @@ function DiscordCell({ p, channels }) {
   if (!p.discordId || !p.inServer) return <div className="when"><span>—</span></div>;
   if (!p.discord?.lastMessageAt) return <div className="when"><b className="bad">Never</b><span>no messages seen</span></div>;
   const channel = channels?.find((c) => c.id === p.discord.lastChannelId);
+  const c = p.chat;
   return (
-    <div className="when" title={day(p.discord.lastMessageAt)}>
+    <div className="when" title={`${day(p.discord.lastMessageAt)}${channel ? ` in #${channel.name}` : ''}`}>
       <b className={p.inactiveDiscord ? 'bad' : ''}>{ago(p.discord.lastMessageAt)}</b>
-      {channel && <span>#{channel.name}</span>}
+      {c ? (
+        <span className={p.lowChat || c.checkIns ? 'warn-text' : ''} title={c.checkIns ? 'Posts most days, about one message each time' : undefined}>
+          {c.week} {c.week === 1 ? 'message' : 'messages'} this week{c.checkIns ? ' · check-ins' : ''}
+        </span>
+      ) : (
+        channel && <span>#{channel.name}</span>
+      )}
     </div>
   );
 }
@@ -156,11 +170,16 @@ function toCsv(rows) {
     const s = v === null || v === undefined ? '' : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const head = ['Name', 'Roblox username', 'Roblox ID', 'Discord name', 'Discord ID', 'Groups', 'Accounts', 'Last played', 'Hours played', 'Last message', 'Status'];
+  const head = [
+    'Name', 'Roblox username', 'Roblox ID', 'Discord name', 'Discord ID', 'Groups', 'Accounts', 'Last played', 'Hours played',
+    'Minutes played (7 days)', 'Minutes played (30 days)', 'Days played (30)', 'Last message', 'Messages (7 days)',
+    'Messages (30 days)', 'Days chatted (30)', 'Messages per day chatted', 'Status',
+  ];
   const lines = rows.map((p) => [
     p.discordName ?? p.displayName ?? p.username, p.username, p.robloxId, p.discordName, p.discordId, p.groups.join('; '),
     ACCOUNTS[p.account].label, p.game?.online ? 'now' : p.game?.lastSeenAt ?? '', p.game ? (p.game.minutes / 60).toFixed(1) : '',
-    p.discord?.lastMessageAt ?? '', statusLabel(p),
+    p.play?.week, p.play?.month, p.play?.activeDays, p.discord?.lastMessageAt ?? '', p.chat?.week, p.chat?.month,
+    p.chat?.activeDays, p.chat?.perDay, statusLabel(p),
   ]);
   return [head, ...lines].map((l) => l.map(cell).join(',')).join('\n');
 }
@@ -217,13 +236,15 @@ function People({ data, people, guild, busy, filters, setFilters, matchProps, se
     );
   };
   const quiet = people.filter(STATUSES[0].test).length;
-  const online = people.filter(STATUSES[4].test).length;
+  const low = people.filter((p) => !STATUSES[0].test(p) && (p.lowChat || p.lowGame)).length;
+  const online = people.filter((p) => p.game?.online).length;
   const missing = people.filter((p) => ACCOUNT_FILTERS[0].test(p.account)).length;
 
   return (
     <>
       <div className="stat-grid">
         {quick(`Inactive ${data.settings.inactiveDays}+ days`, 'clock', quiet, quiet ? 'bad' : 'ok', { status: 'inactive' })}
+        {quick('Low activity', 'chat', low, low ? 'warn' : '', { status: 'low' })}
         {quick('In game now', 'game', online, online ? 'ok' : '', { status: 'online' })}
         {quick('Missing an account', 'link', missing, missing ? 'warn' : '', { account: 'missing' })}
         {quick('Everyone', 'users', people.length, '', {})}
@@ -320,8 +341,14 @@ function Settings({ data, guild, onSave, hidden }) {
   const discordRoles = (guild?.roles ?? []).map((r) => ({ id: r.id, name: r.name, color: r.color, problem: null }));
   const setGroup = (i, changes) => setForm({ ...form, groups: form.groups.map((g, j) => (j === i ? { ...g, ...changes } : g)) });
   const days = Number(form.inactiveDays);
+  const minMessages = Number(form.minMessagesWeek);
+  const minMinutes = Number(form.minMinutesWeek);
   const blocked = !Number.isInteger(days) || days < 1 || days > 90
     ? 'Inactive after must be 1 to 90 days'
+    : !Number.isInteger(minMessages) || minMessages < 0 || minMessages > 1000
+      ? 'Messages a week must be 0 to 1,000'
+      : !Number.isInteger(minMinutes) || minMinutes < 0 || minMinutes > 10000
+        ? 'Minutes played a week must be 0 to 10,000'
     : form.groups.some((g) => !g.name.trim())
       ? 'Every group needs a name'
       : form.groups.some((g) => !g.robloxRoleIds.length && !g.discordRoleIds.length)
@@ -329,7 +356,7 @@ function Settings({ data, guild, onSave, hidden }) {
         : null;
   const save = async () => {
     setBusy(true);
-    await onSave({ ...form, inactiveDays: days });
+    await onSave({ ...form, inactiveDays: days, minMessagesWeek: minMessages, minMinutesWeek: minMinutes });
     setBusy(false);
   };
   return (
@@ -352,6 +379,14 @@ function Settings({ data, guild, onSave, hidden }) {
             <div className="row" style={{ alignItems: 'center' }}>
               <input type="number" min="1" max="90" aria-label="Inactive after (days)" value={form.inactiveDays} onChange={(e) => setForm({ ...form, inactiveDays: e.target.value })} className={blocked?.startsWith('Inactive') ? 'invalid' : ''} />
               <span className="muted">days</span>
+            </div>
+          </Field>
+          <Field label="Low activity below" hint="In the last 7 days. Catches people who drop one message a day or join the game for a minute. 0 turns a minimum off.">
+            <div className="row" style={{ alignItems: 'center' }}>
+              <input type="number" min="0" max="1000" aria-label="Messages a week" value={form.minMessagesWeek} onChange={(e) => setForm({ ...form, minMessagesWeek: e.target.value })} className={blocked?.startsWith('Messages') ? 'invalid' : ''} />
+              <span className="muted">messages a week, or</span>
+              <input type="number" min="0" max="10000" aria-label="Minutes played a week" value={form.minMinutesWeek} onChange={(e) => setForm({ ...form, minMinutesWeek: e.target.value })} className={blocked?.startsWith('Minutes') ? 'invalid' : ''} />
+              <span className="muted">minutes played a week</span>
             </div>
           </Field>
           {form.groups.map((g, i) => (
@@ -667,6 +702,7 @@ export default function TeamEditor({ guildId, onError }) {
           p={open}
           guildId={guildId}
           admin={admin}
+          settings={data.settings}
           channels={guild?.channels}
           matchProps={matchProps}
           onClose={() => setOpenKey(null)}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { matchScore } from '../../src/shared/search.js';
 import { api } from './api.js';
-import { played } from './teamModel.js';
+import { hours, played } from './teamModel.js';
 import { Badge, Button, Card, Empty, FilterMenu, FilterSummary, Icon, SearchInput, ago, day, useConfirm, useToast } from './ui.jsx';
 import { useUrlState } from './urlState.js';
 
@@ -59,6 +59,12 @@ export function RecordRow({ r, showWho = true, action }) {
               <>
                 <div><span>Last played then</span><b>{s.lastPlayedAt ? day(s.lastPlayedAt) : 'Never'}</b><small>{played(s.minutesPlayed)}</small></div>
                 <div><span>Last message then</span><b>{s.lastMessageAt ? day(s.lastMessageAt) : 'Never'}</b><small>{s.messages} messages counted</small></div>
+                {s.messagesWeek !== undefined && s.messagesWeek !== null && (
+                  <div><span>Messages then</span><b>{s.messagesWeek} in 7 days</b><small>{s.messagesMonth} in 30 days, on {s.chatDays} days</small></div>
+                )}
+                {s.minutesWeek !== undefined && s.minutesWeek !== null && (
+                  <div><span>Played then</span><b>{hours(s.minutesWeek)} in 7 days</b><small>{hours(s.minutesMonth)} in 30 days, on {s.playDays} days</small></div>
+                )}
                 <div><span>Roblox role then</span><b>{s.robloxRole ?? '—'}</b></div>
                 <div><span>Discord roles then</span><b>{s.discordRoles?.length ? s.discordRoles.join(', ') : '—'}</b></div>
               </>
