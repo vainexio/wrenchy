@@ -211,7 +211,7 @@ export default function RobloxEditor({ guildId, onError }) {
     api(`/guilds/${guildId}/roblox`).then(setOverview).catch(onError);
   }, [guildId]);
 
-  if (!guild || !form) return <PageSkeleton />;
+  if (!guild || !form) return <PageSkeleton error={editor.error} onRetry={editor.reload} />;
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
   const setBinding = (i, changes) =>

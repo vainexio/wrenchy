@@ -26,15 +26,32 @@ export async function getGroupRoles(groupId) {
 // (A member's own roles: Roblox's per-user API, /v2/users/{id}/groups/roles, gives only the HIGHEST one of members
 // who hold several. Each role's member list below lists them under every role they hold, so roles come from those.)
 const ROLE_MEMBERS_TTL_MS = 10 * 60 * 1000;
+const ROLE_MEMBERS_STALE_MS = 60 * 60 * 1000; // (older than this, wait for a fresh list)
 const roleMembersCache = new Map(); // roleId -> { at, users }
+const roleMembersLoading = new Map(); // roleId -> the request going on
 
 /**
- * Everyone holding a group role: [{ robloxId, username, displayName }]. Cached for 10 minutes; fresh = ask Roblox
- * now (/update). The Team tab, and each linked member's roles (roblox/sync.js).
+ * Everyone holding a group role: [{ robloxId, username, displayName }]. Cached for 10 minutes; after that the cached
+ * list is still answered (up to an hour old) while a fresh one loads in the background, so pages don't wait on Roblox.
+ * fresh = ask Roblox now and wait (/update, after a rank change). The Team tab, and each linked member's roles.
  */
 export async function getRoleMembers(groupId, roleId, { fresh = false } = {}) {
   const cached = roleMembersCache.get(roleId);
-  if (!fresh && cached && Date.now() - cached.at < ROLE_MEMBERS_TTL_MS) return cached.users;
+  const age = cached ? Date.now() - cached.at : Infinity;
+  if (!fresh && age < ROLE_MEMBERS_TTL_MS) return cached.users;
+  let loading = roleMembersLoading.get(roleId);
+  if (!loading) {
+    loading = loadRoleMembers(groupId, roleId).finally(() => roleMembersLoading.delete(roleId));
+    roleMembersLoading.set(roleId, loading);
+  }
+  if (!fresh && age < ROLE_MEMBERS_STALE_MS) {
+    loading.catch((err) => console.error(`[roblox] refreshing role ${roleId} failed:`, err.message));
+    return cached.users;
+  }
+  return loading;
+}
+
+async function loadRoleMembers(groupId, roleId) {
   const users = [];
   let cursor = '';
   for (let page = 0; page < 50; page += 1) {
@@ -64,6 +81,7 @@ export async function getRobloxUser(userId) {
 /** Forgets cached role member lists (after the bot account changes someone's role). */
 export function forgetRoleMembers() {
   roleMembersCache.clear();
+  roleMembersLoading.clear(); // (a list being loaded may be from before the change)
 }
 
 /**

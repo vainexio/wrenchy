@@ -17,6 +17,8 @@ const playerActivitySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+playerActivitySchema.index({ createdAt: 1 }); // (when game tracking began: the oldest one)
+
 export const PlayerActivity = mongoose.model('PlayerActivity', playerActivitySchema);
 
 // When each member last sent a message in a server. Only the time and channel: never the text.

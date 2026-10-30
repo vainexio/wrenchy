@@ -89,19 +89,25 @@ export default function AnnouncementEditor({ guildId, onError }) {
   const [history, setHistory] = useState([]);
   const [form, setForm] = useState(() => loadDraft(guildId));
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
-  useEffect(() => {
+  const loadPage = () => {
+    setLoadError(null);
     Promise.all([api(`/guilds/${guildId}`), api(`/guilds/${guildId}/announcements`)])
       .then(([g, h]) => {
         setGuild(g);
         setHistory(h);
       })
-      .catch(onError);
-  }, [guildId]);
+      .catch((err) => {
+        onError(err);
+        setLoadError(err);
+      });
+  };
+  useEffect(loadPage, [guildId]);
 
   useEffect(() => saveDraft(guildId, form), [guildId, form]);
 
-  if (!guild) return <PageSkeleton />;
+  if (!guild) return <PageSkeleton error={loadError} onRetry={loadPage} />;
 
   const set = (key) => (ev) => setForm({ ...form, [key]: ev.target.value });
   const setEmbed = (key) => (ev) =>

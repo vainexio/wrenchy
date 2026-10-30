@@ -20,7 +20,7 @@ export default function VerificationEditor({ guildId, onError }) {
   const bot = useBot();
   const editor = useGuildEditor({ guildId, kind: 'verification', toForm, onError });
   const { guild, form, setForm, dirty, busy, nudge } = editor;
-  if (!guild || !form) return <PageSkeleton />;
+  if (!guild || !form) return <PageSkeleton error={editor.error} onRetry={editor.reload} />;
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
   const blocked = !form.content.trim() ? 'The message can’t be empty' : !form.buttonLabel.trim() ? 'The button needs a label' : null;

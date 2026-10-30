@@ -6,6 +6,7 @@ import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
 import { GuildConfig, getGuildConfig } from '../models/GuildConfig.js';
 import { isVerified, updateMember } from '../roblox/verified.js';
 import { recordMessage, startDiscordActivity } from '../team/discordActivity.js';
+import { warmTeam } from '../team/roster.js';
 
 const buttonHandlers = {
   [VERIFY_BUTTON_ID]: handleVerifyButton,
@@ -47,6 +48,14 @@ client.once(Events.ClientReady, async (c) => {
 
   await removeLinkPanels(c);
   startDiscordActivity(c);
+  // (the member and role lists the Team tab needs, loaded now rather than on the first page view)
+  for (const guild of c.guilds.cache.values()) {
+    const started = Date.now();
+    getGuildConfig(guild.id)
+      .then((gc) => warmTeam(guild, gc.team))
+      .then(() => console.log(`[team] lists ready in ${guild.name} after ${((Date.now() - started) / 1000).toFixed(1)}s`))
+      .catch((err) => console.error(`[team] warming the lists failed in ${guild.name}:`, err.message));
+  }
 });
 
 client.on(Events.MessageCreate, recordMessage);

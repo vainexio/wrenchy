@@ -535,6 +535,7 @@ export default function TeamEditor({ guildId, onError }) {
   const [takeOff, setTakeOff] = useState(null); // { kind, people }
   const [noticeTo, setNoticeTo] = useState(null); // (people keys, from People)
   const [recordsKey, setRecordsKey] = useState(0);
+  const [loadError, setLoadError] = useState(null);
 
   const setTeam = (d) => {
     setData(d);
@@ -546,8 +547,12 @@ export default function TeamEditor({ guildId, onError }) {
       .then((d) => {
         setData(d);
         setLoadedAt(new Date());
+        setLoadError(null);
       })
-      .catch(onError);
+      .catch((err) => {
+        onError(err);
+        setLoadError(err);
+      });
   useEffect(() => {
     load();
     api(`/guilds/${guildId}`).then(setGuild).catch(onError);
@@ -590,7 +595,17 @@ export default function TeamEditor({ guildId, onError }) {
     }
   }
 
-  if (!data) return <PageSkeleton />;
+  if (!data) {
+    return (
+      <PageSkeleton
+        error={loadError}
+        onRetry={() => {
+          setLoadError(null);
+          load();
+        }}
+      />
+    );
+  }
 
   // (robloxPerson: who has the Roblox account; discordName: for the toast)
   function onMatch(robloxPerson, discordId, discordName) {

@@ -100,14 +100,20 @@ function Dashboard({ status, statusError, user, setUser, setLoginError }) {
   }, []);
   const bot = status?.bot;
 
-  useEffect(() => {
+  const [guildsError, setGuildsError] = useState(null);
+  const loadGuilds = () => {
+    setGuildsError(null);
     api('/guilds')
       .then((list) => {
         setGuilds(list);
         setGuildId(list[0]?.id ?? null);
       })
-      .catch(handleError);
-  }, []);
+      .catch((err) => {
+        handleError(err);
+        setGuildsError(err);
+      });
+  };
+  useEffect(loadGuilds, []);
 
   // (closing or reloading the page with unsaved changes: the browser asks)
   useEffect(() => {
@@ -210,7 +216,7 @@ function Dashboard({ status, statusError, user, setUser, setLoginError }) {
             ) : guilds.length === 0 && status ? (
               <Notice>Wrenchy isn’t in any servers yet. Invite it with the link in the bot’s console.</Notice>
             ) : (
-              <PageSkeleton />
+              <PageSkeleton error={guildsError} onRetry={loadGuilds} />
             )}
           </div>
         </main>

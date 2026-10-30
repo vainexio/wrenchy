@@ -13,16 +13,31 @@ import { lastDays } from './days.js';
 
 const MEMBERS_TTL_MS = 10 * 60 * 1000;
 const membersFetchedAt = new Map(); // guildId -> time
+const membersFetching = new Map(); // guildId -> the fetch going on
 
 export const ONLINE_MS = 8 * 60 * 1000; // (a game heartbeat comes every 5 minutes)
 
-/** Every server member (the Server Members intent), refetched at most every 10 minutes. */
+/**
+ * Every server member (the Server Members intent). Only waits for Discord when the cache is missing most of them (just
+ * after a restart); otherwise answers from the cache (member events keep it current) and refreshes it in the
+ * background every 10 minutes. Waiting for a whole-server fetch on every refresh made the Team tab hang.
+ */
 export async function getMembers(guild) {
-  const at = membersFetchedAt.get(guild.id) ?? 0;
-  if (Date.now() - at > MEMBERS_TTL_MS || guild.members.cache.size < guild.memberCount * 0.9) {
-    await guild.members.fetch();
-    membersFetchedAt.set(guild.id, Date.now());
+  const full = guild.members.cache.size >= guild.memberCount * 0.9;
+  if (full && Date.now() - (membersFetchedAt.get(guild.id) ?? 0) < MEMBERS_TTL_MS) return guild.members.cache;
+  let fetching = membersFetching.get(guild.id);
+  if (!fetching) {
+    fetching = guild.members
+      .fetch()
+      .then(() => membersFetchedAt.set(guild.id, Date.now()))
+      .finally(() => membersFetching.delete(guild.id));
+    membersFetching.set(guild.id, fetching);
   }
+  if (full) {
+    fetching.catch((err) => console.error(`[team] member refresh failed in ${guild.name}:`, err.message));
+    return guild.members.cache;
+  }
+  await fetching;
   return guild.members.cache;
 }
 
@@ -131,11 +146,32 @@ function daysSince(date) {
  */
 export async function buildTeam(guild, team) {
   const groupId = config.defaultRobloxGroupId;
-  const [groupRoles, members, links, matches] = await Promise.all([
+  const started = Date.now();
+  const ms = {};
+  const timed = (name, promise) => {
+    const t = Date.now();
+    return promise.finally(() => (ms[name] = Date.now() - t));
+  };
+  // (every team role's members at once: one after another took a request per role per page)
+  const roleIds = [...new Set(team.groups.flatMap((g) => g.robloxRoleIds))];
+  const roleUsers = timed(
+    'roblox',
+    Promise.all(
+      roleIds.map((id) =>
+        getRoleMembers(groupId, id).catch((err) => {
+          console.error(`[team] can't list Roblox role ${id}:`, err.message);
+          return [];
+        }),
+      ),
+    ).then((lists) => new Map(roleIds.map((id, i) => [id, lists[i]]))),
+  );
+  const memberFetch = timed('members', getMembers(guild));
+  const [groupRoles, members, links, matches, usersOf] = await Promise.all([
     getKnownGroupRoles(groupId),
-    getMembers(guild),
+    memberFetch,
     RobloxLink.find().lean(),
     TeamMatch.find().lean(),
+    roleUsers,
   ]);
   const roleName = new Map(groupRoles.map((r) => [r.id, r.name]));
   const discordOf = new Map([...links.map((l) => [l.robloxId, { id: l.discordId, by: 'linked' }])]);
@@ -153,13 +189,7 @@ export async function buildTeam(guild, team) {
     const people = new Map(); // robloxId or "d:<discordId>" -> person
     // the Roblox side: everyone holding one of the group's roles
     for (const roleId of g.robloxRoleIds) {
-      let users = [];
-      try {
-        users = await getRoleMembers(groupId, roleId);
-      } catch (err) {
-        console.error(`[team] can't list Roblox role ${roleId}:`, err.message);
-      }
-      for (const u of users) {
+      for (const u of usersOf.get(roleId) ?? []) {
         const p = people.get(u.robloxId) ?? { ...u, robloxRoles: [] };
         p.robloxRoles.push(roleName.get(roleId) ?? String(roleId));
         people.set(u.robloxId, p);
@@ -234,7 +264,18 @@ export async function buildTeam(guild, team) {
     list.sort((a, b) => score(b) - score(a) || (a.username ?? a.discordName ?? '').localeCompare(b.username ?? b.discordName ?? ''));
     groups.push({ name: g.name, people: list });
   }
+  // (a slow build says where the time went, in the host's logs)
+  const total = Date.now() - started;
+  if (total > 2500) {
+    console.warn(`[team] slow Team list in ${guild.name}: ${(total / 1000).toFixed(1)}s (Discord members ${ms.members}ms, Roblox role lists ${ms.roblox}ms)`);
+  }
   return groups;
+}
+
+/** Fills the member and role list caches after a restart, so the first Team page doesn't wait for them. */
+export async function warmTeam(guild, team) {
+  const roleIds = [...new Set(team.groups.flatMap((g) => g.robloxRoleIds))];
+  await Promise.all([getMembers(guild), ...roleIds.map((id) => getRoleMembers(config.defaultRobloxGroupId, id).catch(() => []))]);
 }
 
 /** When game tracking began: the first activity ever reported. */

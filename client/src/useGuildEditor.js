@@ -14,6 +14,7 @@ export function useGuildEditor({ guildId, kind, toForm, onError }) {
   const [form, setForm] = useState(null);
   const [channelId, setChannelId] = useState('');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   const load = (data) => {
     setGuild(data);
@@ -21,9 +22,18 @@ export function useGuildEditor({ guildId, kind, toForm, onError }) {
     setChannelId((current) => data[kind].channelId ?? current);
   };
 
+  const reload = () => {
+    setError(null);
+    api(`/guilds/${guildId}`)
+      .then(load)
+      .catch((err) => {
+        onError(err);
+        setError(err);
+      });
+  };
   useEffect(() => {
     setGuild(null);
-    api(`/guilds/${guildId}`).then(load).catch(onError);
+    reload();
   }, [guildId]);
 
   const saved = useMemo(() => guild && toForm(guild), [guild]);
@@ -56,7 +66,7 @@ export function useGuildEditor({ guildId, kind, toForm, onError }) {
   };
 
   return {
-    guild, form, setForm, saved, dirty, busy, nudge, channelId, setChannelId, panelUrl, kind,
+    guild, form, setForm, saved, dirty, busy, nudge, channelId, setChannelId, panelUrl, kind, error, reload,
     discard: () => setForm(saved),
     onSave: (body) =>
       run(() => save(body), (data) => ({

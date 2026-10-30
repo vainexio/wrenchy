@@ -487,10 +487,46 @@ export function Empty({ icon = 'info', title, children }) {
   );
 }
 
-/** A placeholder page while a tab loads: a heading and a few grey blocks. */
-export function PageSkeleton() {
+const STARTING = /not connected|starting/i;
+
+/**
+ * A placeholder page while a tab loads: a heading and a few grey blocks, then a word if it takes long. With `error`,
+ * what went wrong and Try again (by itself every few seconds while Wrenchy is still starting up) instead of loading
+ * forever.
+ */
+export function PageSkeleton({ error, onRetry }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), 8000);
+    return () => clearTimeout(id);
+  }, []);
+  const starting = Boolean(error && STARTING.test(error.message));
+  useEffect(() => {
+    if (!starting || !onRetry) return undefined;
+    const id = setTimeout(onRetry, 3000);
+    return () => clearTimeout(id);
+  }, [error]);
+  if (error && !starting) {
+    return (
+      <Card>
+        <Empty icon="alert" title="This page didn’t load">
+          <p className="muted" style={{ margin: '0 0 12px' }}>{error.message}</p>
+          {onRetry && (
+            <Button icon="refresh" onClick={onRetry}>
+              Try again
+            </Button>
+          )}
+        </Empty>
+      </Card>
+    );
+  }
   return (
     <div className="stack" aria-busy="true" aria-label="Loading">
+      {(starting || slow) && (
+        <Notice tone="info">
+          {starting ? 'Wrenchy is still starting up. Trying again in a moment…' : 'Still loading… the first visit after Wrenchy restarts takes a little longer.'}
+        </Notice>
+      )}
       <div className="skeleton" style={{ height: 34, width: 260 }} />
       <div className="skeleton" style={{ height: 16, width: 420, maxWidth: '100%' }} />
       <div className="skeleton" style={{ height: 220 }} />
