@@ -466,9 +466,19 @@ function BotAccount({ admin }) {
           <ol className="setup">
             <li>Put a Roblox account for Wrenchy in the group, ranked above the team roles, with permission to manage members.</li>
             <li>
-              On the host (Render → Environment), add <code>ROBLOX_COOKIE</code> with that account’s cookie, then redeploy.
+              Signed in as that account in a browser, copy its <code>.ROBLOSECURITY</code> cookie (the value alone, or the
+              whole cookie line: Wrenchy picks it out).
+            </li>
+            <li>
+              On the host (Render → Environment), set <code>ROBLOX_COOKIE</code> to it, then redeploy.
             </li>
           </ol>
+          {b.configured && (
+            <p className="hint">
+              Roblox signs a cookie out when the account logs out, or sometimes when it’s used from a new place (like the host).
+              If it stops working, sign in again, copy the new cookie and set it again.
+            </p>
+          )}
         </>
       )}
     </Card>
@@ -706,6 +716,7 @@ export default function TeamEditor({ guildId, onError }) {
             onTeam={setTeam}
             onError={onError}
             onAdded={(name) => setFilters({ ...FILTERS, sort: filters.sort, q: name })}
+            onSettings={() => goto('settings')}
           />
         )}
         {view === 'notices' && (

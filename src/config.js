@@ -11,6 +11,19 @@ if (missing.length) {
 
 const port = Number(process.env.PORT) || 3000;
 
+/**
+ * The Roblox bot account's .ROBLOSECURITY value, however it was pasted: the value alone, in quotes, or the browser's
+ * whole cookie line ("__utmz=...; .ROBLOSECURITY=_|WARNING...|_CAEQ...; RBXcb=..."): sending that whole line as the
+ * cookie signs nobody in.
+ */
+function robloxCookie(raw) {
+  if (!raw) return null;
+  let value = raw.trim().replace(/^["']|["']$/g, '');
+  const named = value.match(/\.ROBLOSECURITY=([^;\s]+)/);
+  if (named) value = named[1];
+  return value.replace(/[;,]+$/, '') || null;
+}
+
 export const config = {
   token: process.env.DISCORD_TOKEN,
   mongoUri: process.env.MONGODB_URI,
@@ -20,7 +33,7 @@ export const config = {
   sessionSecret: process.env.SESSION_SECRET || process.env.DISCORD_CLIENT_SECRET || null,
   gameApiKey: process.env.GAME_API_KEY || null,
   // (the Roblox bot account that ranks team members: its .ROBLOSECURITY cookie)
-  robloxCookie: process.env.ROBLOX_COOKIE || null,
+  robloxCookie: robloxCookie(process.env.ROBLOX_COOKIE),
   flagChannelId: process.env.FLAG_CHANNEL_ID || '1561264779505705040',
   defaultRobloxGroupId: Number(process.env.ROBLOX_GROUP_ID) || 196288263,
   adminRoleId: process.env.ADMIN_ROLE_ID || '1560157523984646154',

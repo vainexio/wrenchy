@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { RecordRow } from './TeamRecords.jsx';
-import { ACCOUNTS, STATUS_TONE, hours, nameOf, reachable, statusLabel } from './teamModel.js';
+import { ACCOUNTS, STATUS_TONE, hours, nameOf, reachable, statusLabel, whyNotGivable } from './teamModel.js';
 import { MatchActions } from './teamPickers.jsx';
 import { Badge, Button, Field, Icon, Modal, Notice, ago, useToast } from './ui.jsx';
 
@@ -217,7 +217,7 @@ function RoleControl({ p, guildId, admin, onTeam, onError, onDone }) {
           {admin.roles.map((r) => (
             <option key={r.id} value={r.id} disabled={!r.assignable && r.id !== current?.id}>
               {r.name}
-              {r.id === current?.id ? ' (now)' : ''}
+              {r.id === current?.id ? ' (now)' : r.assignable ? '' : ` (${whyNotGivable(admin, r)})`}
             </option>
           ))}
         </select>

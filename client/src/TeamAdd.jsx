@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
+import { whyNotGivable } from './teamModel.js';
 import { MemberSearch } from './teamPickers.jsx';
 import { Badge, Button, Card, Field, Notice, Segmented, useToast } from './ui.jsx';
 
@@ -26,7 +27,7 @@ function Step({ n, title, done, children }) {
   );
 }
 
-export default function TeamAdd({ guildId, guild, data, admin, people, onTeam, onError, onAdded }) {
+export default function TeamAdd({ guildId, guild, data, admin, people, onTeam, onError, onAdded, onSettings }) {
   const toast = useToast();
   const [member, setMember] = useState(null);
   const [username, setUsername] = useState('');
@@ -111,11 +112,6 @@ export default function TeamAdd({ guildId, guild, data, admin, people, onTeam, o
         </>
       }
     >
-      {needsRoblox && admin && !admin.bot.ok && (
-        <Notice tone="warn">
-          Wrenchy needs the Roblox bot account to give Roblox roles. Set it up under <b>Settings</b>, then come back.
-        </Notice>
-      )}
       <div className="steps">
         <Step n={1} title="Their Discord account" done={Boolean(member)}>
           {member ? (
@@ -175,6 +171,16 @@ export default function TeamAdd({ guildId, guild, data, admin, people, onTeam, o
           {data.settings.groups.length > 1 && (
             <Segmented label="Team group" value={groupName} onChange={setGroupName} options={data.settings.groups.map((g) => ({ value: g.name, label: g.name }))} />
           )}
+          {needsRoblox && admin && !admin.bot.ok && (
+            <Notice tone="warn">
+              {admin.bot.configured
+                ? admin.bot.error ?? 'The Roblox bot account isn’t signed in.'
+                : 'No Roblox bot account is set up yet, so Wrenchy can’t give Roblox roles.'}{' '}
+              <button type="button" className="link-btn" onClick={onSettings}>
+                Open Settings
+              </button>
+            </Notice>
+          )}
           {needsRoblox && (
             <Field label="Roblox role">
               <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
@@ -182,7 +188,7 @@ export default function TeamAdd({ guildId, guild, data, admin, people, onTeam, o
                 {groupRoles.map((r) => (
                   <option key={r.id} value={r.id} disabled={!r.assignable}>
                     {r.name}
-                    {r.assignable ? '' : ' (the bot account can’t give this)'}
+                    {r.assignable ? '' : ` (${whyNotGivable(admin, r)})`}
                   </option>
                 ))}
               </select>

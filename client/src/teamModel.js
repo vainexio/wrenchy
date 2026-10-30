@@ -107,5 +107,12 @@ export function lastOnDiscord(p) {
   return times.length ? new Date(Math.max(...times)) : null;
 }
 
+/** Why the bot account can't give a Roblox role, or null when it can. */
+export function whyNotGivable(admin, role) {
+  if (role.assignable) return null;
+  if (!admin?.bot.ok) return admin?.bot.configured ? 'the bot account isn’t signed in' : 'no bot account set up';
+  return `ranked at or above the bot account (${admin.bot.role.name})`;
+}
+
 /** Whether a notice can reach them: a Discord account still in the server. */
 export const reachable = (p) => Boolean(p.discordId && p.inServer);
