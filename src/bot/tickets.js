@@ -41,7 +41,10 @@ export function buildTicketPanel(tickets, panel) {
   const embed = new EmbedBuilder().setColor(colorOf(panel.color));
   if (panel.title) embed.setTitle(panel.title);
   if (panel.description) embed.setDescription(panel.description);
-  if (!panel.title && !panel.description) embed.setDescription('Open a ticket');
+  if (panel.imageUrl) embed.setImage(panel.imageUrl);
+  if (panel.thumbnailUrl) embed.setThumbnail(panel.thumbnailUrl);
+  if (panel.footer) embed.setFooter({ text: panel.footer, iconURL: panel.footerIconUrl || undefined });
+  if (!panel.title && !panel.description && !panel.imageUrl) embed.setDescription('Open a ticket');
   const components = [];
   if (types.length && panel.style === 'menu') {
     const menu = new StringSelectMenuBuilder()

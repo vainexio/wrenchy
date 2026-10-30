@@ -13,6 +13,9 @@ import { useUrlState } from './urlState.js';
 // Tickets: kinds of ticket (each with its category, staff roles and channel names), the panels members open them
 // from, settings, and every ticket with its transcript. The bot side is src/bot/tickets.js.
 
+/** A link Discord won't take as a picture. */
+const badLink = (url) => Boolean(url) && !/^https?:\/\/\S+$/i.test(url);
+
 const newId = () => Math.random().toString(36).slice(2, 10).padEnd(8, '0');
 const COLORS = [
   { value: 'primary', label: 'Blue', css: '#5865f2' },
@@ -61,6 +64,7 @@ function blankPanel(types) {
   return {
     id: newId(), name: 'Ticket panel', channelId: null, messageId: null, title: 'Need help?',
     description: 'Pick what your ticket is about and a private channel opens with our staff.', color: '#F08C1A',
+    imageUrl: '', thumbnailUrl: '', footer: '', footerIconUrl: '',
     style: 'buttons', placeholder: 'Open a ticket…', typeIds: types.map((t) => t.id), url: null,
   };
 }
@@ -255,8 +259,20 @@ function PanelPreview({ panel, types }) {
       <div className="preview-label"><span>Preview</span></div>
       <div className="discord">
         <div className="discord-embed" style={{ borderColor: panel.color, marginTop: 0 }}>
-          {panel.title && <div className="discord-embed-title">{panel.title}</div>}
-          {panel.description && <div className="discord-embed-desc">{renderMarkdown(panel.description)}</div>}
+          <div className="discord-embed-body">
+            <div className="grow">
+              {panel.title && <div className="discord-embed-title">{panel.title}</div>}
+              {panel.description && <div className="discord-embed-desc">{renderMarkdown(panel.description)}</div>}
+            </div>
+            {panel.thumbnailUrl && <img className="discord-embed-thumb" src={panel.thumbnailUrl} alt="" />}
+          </div>
+          {panel.imageUrl && <img className="discord-embed-image" src={panel.imageUrl} alt="" />}
+          {panel.footer && (
+            <div className="discord-embed-footer footer-line">
+              {panel.footerIconUrl && <img src={panel.footerIconUrl} alt="" />}
+              {panel.footer}
+            </div>
+          )}
         </div>
         {!shown.length ? (
           <p className="placeholder" style={{ margin: '10px 0 0' }}>No ticket types on this panel yet.</p>
@@ -347,6 +363,22 @@ function PanelEditor({ panel, types, guild, saved, onChange, onRemove, onPost })
           <Field label="Message" max={4000} value={panel.description}>
             <textarea rows={3} maxLength={4000} value={panel.description} onChange={(e) => set({ description: e.target.value })} />
           </Field>
+          <div className="fields-row">
+            <Field label="Image (optional)" hint="A big picture under the message.">
+              <input type="url" value={panel.imageUrl ?? ''} placeholder="https://" onChange={(e) => set({ imageUrl: e.target.value.trim() })} className={badLink(panel.imageUrl) ? 'invalid' : ''} />
+            </Field>
+            <Field label="Thumbnail (optional)" hint="A small picture in the corner.">
+              <input type="url" value={panel.thumbnailUrl ?? ''} placeholder="https://" onChange={(e) => set({ thumbnailUrl: e.target.value.trim() })} className={badLink(panel.thumbnailUrl) ? 'invalid' : ''} />
+            </Field>
+          </div>
+          <div className="fields-row">
+            <Field label="Footer (optional)" max={2048} value={panel.footer ?? ''}>
+              <input value={panel.footer ?? ''} maxLength={2048} onChange={(e) => set({ footer: e.target.value })} />
+            </Field>
+            <Field label="Footer icon (optional)" hint={panel.footer ? 'A tiny picture before the footer.' : 'Shows with a footer.'}>
+              <input type="url" value={panel.footerIconUrl ?? ''} placeholder="https://" onChange={(e) => set({ footerIconUrl: e.target.value.trim() })} className={badLink(panel.footerIconUrl) ? 'invalid' : ''} />
+            </Field>
+          </div>
           <Field label="Members pick with">
             <Segmented label="Panel style" value={panel.style} onChange={(style) => set({ style })} options={[{ value: 'buttons', label: 'Buttons' }, { value: 'menu', label: 'A dropdown' }]} />
           </Field>
@@ -640,7 +672,9 @@ export default function TicketsEditor({ guildId, onError }) {
       ? 'Channel names need {n} (the ticket’s number)'
       : form.types.some((t) => t.questions.some((q) => !q.label.trim()))
         ? 'Every form question needs text'
-        : null;
+        : form.panels.some((p) => [p.imageUrl, p.thumbnailUrl, p.footerIconUrl].some(badLink))
+          ? 'Picture links must start with https://'
+          : null;
 
   async function save() {
     setBusy(true);

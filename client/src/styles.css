@@ -764,3 +764,5 @@ input.check:indeterminate::after { content: ''; width: 8px; height: 2px; backgro
 .t-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9rem; }
 .t-embed { border-left: 3px solid var(--accent); padding: 4px 10px; margin-top: 4px; background: var(--surface-2); border-radius: 4px; font-size: 0.86rem; white-space: pre-wrap; }
 .t-file { display: block; font-size: 0.86rem; margin-top: 2px; }
+.footer-line { display: flex; align-items: center; gap: 6px; }
+.footer-line img { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }

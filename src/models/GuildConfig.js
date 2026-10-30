@@ -166,6 +166,10 @@ const ticketPanelSchema = new mongoose.Schema(
     title: { type: String, default: 'Need help?' },
     description: { type: String, default: 'Pick what your ticket is about and a private channel opens with our staff.' },
     color: { type: String, default: '#F08C1A' },
+    imageUrl: { type: String, default: '' }, // (a big picture under the message)
+    thumbnailUrl: { type: String, default: '' }, // (a small one in the corner)
+    footer: { type: String, default: '' },
+    footerIconUrl: { type: String, default: '' },
     style: { type: String, enum: ['buttons', 'menu'], default: 'buttons' },
     placeholder: { type: String, default: 'Open a ticket…' }, // (a dropdown's prompt)
     typeIds: { type: [String], default: [] }, // (in the order they show)

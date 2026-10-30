@@ -25,6 +25,13 @@ function text(value, what, max, { required = false } = {}) {
 
 const isCategory = (guild, id) => guild.channels.cache.get(id)?.type === ChannelType.GuildCategory;
 const isText = (guild, id) => guild.channels.cache.get(id)?.isTextBased() && !guild.channels.cache.get(id)?.isThread();
+/** An image link (http or https), or '' for none. */
+function imageUrl(value, what) {
+  const url = text(value, what, 2000);
+  if (url && !/^https?:\/\/\S+$/i.test(url)) throw new HttpError(400, `${what} must be a link starting with https://`);
+  return url;
+}
+
 const keepId = (id) => (typeof id === 'string' && /^[a-z0-9]{4,16}$/.test(id) ? id : newId());
 
 export async function ticketsOverview(guild) {
@@ -127,6 +134,10 @@ export async function saveTickets(guild, body) {
       title: text(raw.title, `${name}: title`, 256),
       description: text(raw.description, `${name}: message`, 4000),
       color: /^#[0-9a-f]{6}$/i.test(raw.color ?? '') ? raw.color : '#F08C1A',
+      imageUrl: imageUrl(raw.imageUrl, `${name}: image`),
+      thumbnailUrl: imageUrl(raw.thumbnailUrl, `${name}: thumbnail`),
+      footer: text(raw.footer, `${name}: footer`, 2048),
+      footerIconUrl: imageUrl(raw.footerIconUrl, `${name}: footer icon`),
       style: raw.style === 'menu' ? 'menu' : 'buttons',
       placeholder: text(raw.placeholder, `${name}: dropdown prompt`, 150),
       typeIds: [...new Set(Array.isArray(raw.typeIds) ? raw.typeIds : [])].filter((x) => typeIds.has(x)).slice(0, 25),
