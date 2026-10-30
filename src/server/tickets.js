@@ -38,7 +38,10 @@ export async function ticketsOverview(guild) {
   const openOf = new Map(open.map((o) => [o._id, o.n]));
   const me = guild.members.me;
   return {
-    settings: { enabled: t.enabled, transcriptChannelId: t.transcriptChannelId, dmTranscript: t.dmTranscript, closedCategoryId: t.closedCategoryId },
+    settings: {
+      enabled: t.enabled, transcriptChannelId: t.transcriptChannelId, dmTranscript: t.dmTranscript,
+      deleteOnClose: t.deleteOnClose !== false, closedCategoryId: t.closedCategoryId,
+    },
     types: t.types.map((type) => ({ ...type, nextNumber: (seq.get(type.id) ?? 0) + 1, open: openOf.get(type.id) ?? 0 })),
     panels: t.panels.map((p) => ({
       ...p,
@@ -145,6 +148,7 @@ export async function saveTickets(guild, body) {
   t.enabled = s.enabled !== false;
   t.transcriptChannelId = s.transcriptChannelId || null;
   t.dmTranscript = s.dmTranscript !== false;
+  t.deleteOnClose = s.deleteOnClose !== false;
   t.closedCategoryId = s.closedCategoryId || null;
   t.types = types;
   t.panels = panels;
@@ -190,7 +194,7 @@ export async function listTickets(guild) {
   return rows.map(({ _id, ...t }) => ({
     id: String(_id),
     ...t,
-    url: t.status !== 'deleted' ? `https://discord.com/channels/${guild.id}/${t.channelId}` : null,
+    url: t.status !== 'deleted' && !t.deletedAt ? `https://discord.com/channels/${guild.id}/${t.channelId}` : null,
   }));
 }
 

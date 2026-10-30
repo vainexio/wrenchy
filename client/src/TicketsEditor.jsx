@@ -432,8 +432,16 @@ function Settings({ form, setForm, guild, categories, bot }) {
   ];
   return (
     <div className="stack">
-      <Card title="Closing tickets" description="Closing saves a transcript of everything said.">
-        <Field label="Post transcripts in" hint="With who opened it, who closed it and why.">
+      <Card title="Closing tickets" description="Closing saves a transcript of everything said, with a summary: who, when, why, and what was said.">
+        <div className="field">
+          <Toggle
+            checked={s.deleteOnClose}
+            onChange={(deleteOnClose) => set({ deleteOnClose })}
+            label="Delete the channel 5 seconds after it’s closed"
+            description="Off: closed tickets stay (read-only) and can be reopened."
+          />
+        </div>
+        <Field label="Post transcripts in" hint="The summary and the full transcript file.">
           <select value={s.transcriptChannelId ?? ''} onChange={(e) => set({ transcriptChannelId: e.target.value || null })}>
             <option value="">Nowhere</option>
             {(guild?.channels ?? []).map((c) => (
@@ -441,12 +449,14 @@ function Settings({ form, setForm, guild, categories, bot }) {
             ))}
           </select>
         </Field>
-        <Field label="Closed tickets move to" hint="So open ones are easy to find. They stay readable for staff.">
-          <select value={s.closedCategoryId ?? ''} onChange={(e) => set({ closedCategoryId: e.target.value || null })}>
-            <option value="">Nowhere (they stay where they are)</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
+        {!s.deleteOnClose && (
+          <Field label="Closed tickets move to" hint="So open ones are easy to find. They stay readable for staff.">
+            <select value={s.closedCategoryId ?? ''} onChange={(e) => set({ closedCategoryId: e.target.value || null })}>
+              <option value="">Nowhere (they stay where they are)</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+        )}
         <div className="field">
           <Toggle checked={s.dmTranscript} onChange={(dmTranscript) => set({ dmTranscript })} label="DM the transcript to whoever opened it" />
         </div>

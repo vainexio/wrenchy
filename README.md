@@ -32,8 +32,8 @@ Private channels between a member and your staff, set up on the dashboard's **Ti
 
 - **Ticket types** (Content creator application, General inquiry, Player report... one click to start from those): each with its own category, staff roles, button colour and emoji, a welcome message, an optional form of up to 5 questions asked before it opens, how many one member can have open, and how its channels are named: `cc-apps-{n}` gives `cc-apps-0001`, `cc-apps-0002`... (`{user}` adds their username; the next number can be set).
 - **Panels**: an embed with a button per type, or a dropdown, posted in any channel; saving updates posted panels in place.
-- **In a ticket**: Close (with a reason), Claim, Add user, Transcript; once closed: Reopen, Transcript, Delete. `/ticket add|remove|close|rename|claim|transcript` does the same. Closed tickets lock (members can read, not write) and can move to a closed category.
-- **Transcripts**: saved on close, posted in the transcript channel with who opened, claimed and closed it and why, DMed to the member, and readable on the dashboard (every ticket, with search and filters).
+- **In a ticket**: Close (with a reason), Claim, Add user, Transcript. `/ticket add|remove|close|rename|claim|transcript` does the same. Closing deletes the channel 5 seconds later (or, with that turned off in Settings, it locks: members can read, not write, it can move to a closed category, and staff can Reopen or Delete it).
+- **Transcripts**: saved on close and posted in the transcript channel with a summary to recall it at a glance (who opened, handled and closed it, when, how long it was open, the reason, the form's answers, who talked, and the conversation itself) and the full transcript file; DMed to the member too, and readable on the dashboard (every ticket, with search and filters).
 
 Needs **Manage Channels**, **Manage Roles** and **Attach Files**, and the **Message Content Intent** on in the Developer Portal (Bot → Privileged Gateway Intents) for transcripts to include the messages' text. Wrenchy doesn't ask for it at login, so activity tracking still never sees what anyone says.
 

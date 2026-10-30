@@ -178,7 +178,8 @@ const ticketsSchema = new mongoose.Schema(
     enabled: { type: Boolean, default: true },
     transcriptChannelId: { type: String, default: null }, // (closed tickets' transcripts are posted here)
     dmTranscript: { type: Boolean, default: true }, // (and sent to the person who opened it)
-    closedCategoryId: { type: String, default: null }, // (closed tickets move here; null = they stay)
+    deleteOnClose: { type: Boolean, default: true }, // (closing deletes the channel 5 seconds later)
+    closedCategoryId: { type: String, default: null }, // (with deleteOnClose off: closed tickets move here; null = they stay)
     types: { type: [ticketTypeSchema], default: [] },
     panels: { type: [ticketPanelSchema], default: [] },
   },

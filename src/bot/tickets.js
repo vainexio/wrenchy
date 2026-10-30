@@ -319,20 +319,73 @@ function transcriptFile(guild, ticket, messages) {
   return new AttachmentBuilder(Buffer.from(transcriptHtml(guild, ticket, messages), 'utf8'), { name: `${ticket.name}.html` });
 }
 
-/** Posts a closed ticket's transcript in the transcript channel and DMs it to whoever opened it. */
-async function deliverTranscript(guild, tickets, ticket) {
-  const summary = new EmbedBuilder()
+const stamp = (date) => `<t:${Math.floor(new Date(date).getTime() / 1000)}:f>`;
+
+function duration(from, to) {
+  const m = Math.max(1, Math.round((new Date(to) - new Date(from)) / 60000));
+  if (m < 60) return `${m} min`;
+  const h = Math.round(m / 6) / 10;
+  return h < 48 ? `${h} h` : `${Math.round(h / 24)} days`;
+}
+
+/** What was said, short enough for an embed: everything if it fits, else the start and the end. */
+function conversation(messages) {
+  const lines = messages
+    .filter((m) => !m.bot && (m.content || m.attachments.length))
+    .map((m) => {
+      const text = (m.content || '').replace(/\s+/g, ' ').trim();
+      const files = m.attachments.length ? ` 📎${m.attachments.length > 1 ? `×${m.attachments.length}` : ''}` : '';
+      return `**${m.author}:** ${text.length > 180 ? `${text.slice(0, 177)}…` : text}${files}`;
+    });
+  const fit = (list) => list.join('\n').length <= 3200;
+  if (fit(lines)) return lines.join('\n');
+  let head = 3;
+  let tail = 8;
+  while (tail > 2 && !fit([...lines.slice(0, head), '…', ...lines.slice(-tail)])) tail -= 1;
+  if (!fit([...lines.slice(0, head), '…', ...lines.slice(-tail)])) head = 1;
+  return [...lines.slice(0, head), `… ${lines.length - head - tail} more …`, ...lines.slice(-tail)].join('\n').slice(0, 3900);
+}
+
+/**
+ * A closed ticket at a glance (the owner, 2026-10-31: "send transcript to a designated channel with the details of the
+ * ticket so its easier to recall without opening the transcript html"): who, when, how long, why, the form's answers,
+ * who talked, and what was said.
+ */
+function ticketSummary(ticket) {
+  const talkers = new Map();
+  for (const m of ticket.transcript) if (!m.bot) talkers.set(m.author, (talkers.get(m.author) ?? 0) + 1);
+  const said = conversation(ticket.transcript);
+  const embed = new EmbedBuilder()
     .setColor(ACCENT)
-    .setTitle(`${ticket.name} closed`)
+    .setTitle(`#${ticket.name} · ${ticket.typeName || 'Ticket'}`.slice(0, 256))
+    .setDescription(said || '*Nothing was said in the ticket.*')
     .addFields(
-      { name: 'Type', value: ticket.typeName || '—', inline: true },
-      { name: 'Opened by', value: `<@${ticket.openerId}>`, inline: true },
+      { name: 'Opened by', value: `<@${ticket.openerId}> (${ticket.openerName})`, inline: true },
       { name: 'Closed by', value: ticket.closedBy?.id ? `<@${ticket.closedBy.id}>` : '—', inline: true },
-      { name: 'Reason', value: ticket.closeReason || '—' },
-      { name: 'Messages', value: String(ticket.transcript.length), inline: true },
-      { name: 'Claimed by', value: ticket.claimedBy?.id ? `<@${ticket.claimedBy.id}>` : '—', inline: true },
+      { name: 'Handled by', value: ticket.claimedBy?.id ? `<@${ticket.claimedBy.id}>` : 'Nobody claimed it', inline: true },
+      { name: 'Opened', value: stamp(ticket.createdAt), inline: true },
+      { name: 'Closed', value: ticket.closedAt ? stamp(ticket.closedAt) : '—', inline: true },
+      { name: 'Open for', value: ticket.closedAt ? duration(ticket.createdAt, ticket.closedAt) : '—', inline: true },
+      { name: 'Reason', value: (ticket.closeReason || 'None given').slice(0, 1024) },
     )
-    .setTimestamp();
+    .setFooter({ text: `${ticket.transcript.length} messages · the full transcript is attached` })
+    .setTimestamp(ticket.closedAt ?? new Date());
+  if (talkers.size) {
+    embed.addFields({
+      name: 'Who talked',
+      value: [...talkers].sort((a, b) => b[1] - a[1]).map(([who, n]) => `${who} (${n})`).join(', ').slice(0, 1024),
+    });
+  }
+  if (ticket.addedUserIds.length) embed.addFields({ name: 'Added to it', value: ticket.addedUserIds.map((id) => `<@${id}>`).join(' ').slice(0, 1024) });
+  for (const a of ticket.answers.slice(0, 5)) {
+    embed.addFields({ name: a.question.slice(0, 256), value: (a.answer || '—').slice(0, 1024) });
+  }
+  return embed;
+}
+
+/** Posts a closed ticket's summary and transcript in the transcript channel and DMs them to whoever opened it. */
+async function deliverTranscript(guild, tickets, ticket) {
+  const summary = ticketSummary(ticket);
   const log = tickets.transcriptChannelId ? guild.channels.cache.get(tickets.transcriptChannelId) : null;
   if (log?.isTextBased()) {
     await log
@@ -344,19 +397,29 @@ async function deliverTranscript(guild, tickets, ticket) {
     await user
       ?.send({
         content: `Your ticket **${ticket.name}** in **${guild.name}** was closed${ticket.closeReason ? `: ${ticket.closeReason}` : '.'} Here's what was said.`,
+        embeds: [summary],
         files: [transcriptFile(guild, ticket, ticket.transcript)],
+        allowedMentions: { parse: [] },
       })
       .catch(() => {}); // (their DMs are closed)
   }
 }
 
 // ------------------------------------------------------------------ what can be done in a ticket
-/** Closes a ticket: the members in it can still read but not write, it moves to the closed category, its transcript is kept and sent. */
+/**
+ * Closes a ticket: its transcript is saved and sent with a summary, then the channel is deleted DELETE_DELAY_MS later
+ * (the owner, 2026-10-31: "closing ticket should automatically delete it in 5 seconds"). With deleting turned off, the
+ * members in it can still read but not write, and it moves to the closed category. Returns { embed, deleting }.
+ */
 export async function closeTicket(guild, found, actor, reason = '') {
   const { ticket, gc } = found;
   if (ticket.status !== 'open') throw new TicketError('This ticket is already closed.');
   const channel = guild.channels.cache.get(ticket.channelId);
-  if (channel) {
+  const deleting = Boolean(channel && gc.tickets.deleteOnClose !== false);
+  if (channel && deleting) {
+    ticket.transcript = await readMessages(channel);
+    ticket.transcriptAt = new Date();
+  } else if (channel) {
     for (const id of [ticket.openerId, ...ticket.addedUserIds]) {
       await channel.permissionOverwrites.edit(id, { SendMessages: false }, AS_MEMBER).catch(() => {});
     }
@@ -371,12 +434,26 @@ export async function closeTicket(guild, found, actor, reason = '') {
   ticket.closedAt = new Date();
   ticket.closedBy = { id: actor.id, name: actor.user?.username ?? actor.username };
   ticket.closeReason = String(reason ?? '').slice(0, 500);
+  if (deleting) ticket.deletedAt = new Date(Date.now() + DELETE_DELAY_MS);
   await ticket.save();
+  // (sent before the channel goes, so a restart in between can't lose it)
   await deliverTranscript(guild, gc.tickets, ticket);
-  return new EmbedBuilder()
-    .setColor(0x80848e)
-    .setDescription(`🔒 Closed by ${actor}${ticket.closeReason ? `\n> ${ticket.closeReason}` : ''}`)
-    .setFooter({ text: 'Staff can reopen it, save its transcript, or delete the channel.' });
+  const said = ticket.closeReason ? `\n> ${ticket.closeReason}` : '';
+  if (deleting) {
+    setTimeout(() => channel.delete(`Ticket closed by ${actor.user?.tag ?? actor.username}`).catch(() => {}), DELETE_DELAY_MS);
+    const log = gc.tickets.transcriptChannelId ? ` Its transcript is in <#${gc.tickets.transcriptChannelId}>.` : '';
+    return {
+      deleting,
+      embed: new EmbedBuilder().setColor(0x80848e).setDescription(`🔒 Closed by ${actor}${said}\n\nThis channel is deleted in ${DELETE_DELAY_MS / 1000} seconds.${log}`),
+    };
+  }
+  return {
+    deleting,
+    embed: new EmbedBuilder()
+      .setColor(0x80848e)
+      .setDescription(`🔒 Closed by ${actor}${said}`)
+      .setFooter({ text: 'Staff can reopen it, save its transcript, or delete the channel.' }),
+  };
 }
 
 export async function reopenTicket(guild, found, actor) {
@@ -486,8 +563,8 @@ async function handle(interaction) {
       await interaction.deferReply();
       const found = await inTicket(interaction);
       mustBeOpenerOrStaff(interaction.member, found.ticket, found.type);
-      const embed = await closeTicket(interaction.guild, found, interaction.member, interaction.fields.getTextInputValue('reason'));
-      return interaction.editReply({ embeds: [embed], components: [closedControls()] });
+      const { embed, deleting } = await closeTicket(interaction.guild, found, interaction.member, interaction.fields.getTextInputValue('reason'));
+      return interaction.editReply({ embeds: [embed], components: deleting ? [] : [closedControls()], allowedMentions: { parse: [] } });
     }
     case 'reopen': {
       const found = await inTicket(interaction);
@@ -498,7 +575,11 @@ async function handle(interaction) {
     case 'delete': {
       const found = await inTicket(interaction);
       mustBeStaff(interaction.member, found.type);
-      if (found.ticket.status === 'open') await closeTicket(interaction.guild, found, interaction.member, 'Deleted');
+      if (found.ticket.status === 'open') {
+        // (closing deletes it anyway when that's on)
+        const { embed, deleting } = await closeTicket(interaction.guild, found, interaction.member, 'Deleted');
+        if (deleting) return interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+      }
       found.ticket.status = 'deleted';
       found.ticket.deletedAt = new Date();
       await found.ticket.save();

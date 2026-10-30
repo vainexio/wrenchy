@@ -107,9 +107,11 @@ client.on(Events.GuildMemberUpdate, async (before, after) => {
 
 client.on(Events.GuildCreate, registerCommands);
 
-// (a ticket channel deleted by hand: its ticket is done)
+// (a ticket channel deleted by hand while open: its ticket is done; a closed one just notes when its channel went)
 client.on(Events.ChannelDelete, (channel) => {
-  Ticket.updateOne({ channelId: channel.id, status: { $ne: 'deleted' } }, { $set: { status: 'deleted', deletedAt: new Date() } }).catch(() => {});
+  const now = new Date();
+  Ticket.updateOne({ channelId: channel.id, status: 'open' }, { $set: { status: 'deleted', deletedAt: now } }).catch(() => {});
+  Ticket.updateOne({ channelId: channel.id, status: 'closed', deletedAt: null }, { $set: { deletedAt: now } }).catch(() => {});
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

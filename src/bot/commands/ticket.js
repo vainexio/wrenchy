@@ -52,8 +52,8 @@ export async function execute(interaction) {
       case 'close': {
         only(staff || opener, 'staff or whoever opened this ticket');
         await interaction.deferReply();
-        const embed = await closeTicket(guild, found, member, interaction.options.getString('reason') ?? '');
-        return interaction.editReply({ embeds: [embed] });
+        const { embed } = await closeTicket(guild, found, member, interaction.options.getString('reason') ?? '');
+        return interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
       }
       case 'rename': {
         only(staff, 'staff');
