@@ -10,6 +10,7 @@ import { HttpError } from './errors.js';
 import { applyRoblox, robloxOverview, syncGuild, updateOne } from './robloxAdmin.js';
 import { matchMember, saveTeam, searchMembers, startScan, teamOverview } from './teamAdmin.js';
 import { listTickets, postPanel as postTicketPanel, saveTickets, ticketTranscript, ticketsOverview } from './tickets.js';
+import { cancelOnboarding, onboardPeople, onboardingOverview, rankNow, resendGuide, saveGuide } from './onboardingAdmin.js';
 import {
   addMember, changeRole, listNotices, listRecords, lookupRoblox, rankingInfo, reinstate, sendNotice, takeOff,
 } from './teamManage.js';
@@ -275,6 +276,35 @@ export function createApiRouter(client, auth) {
   router.get('/guilds/:guildId/tickets/:ticketId', async (req, res) => {
     const guild = getGuild(client, req.params.guildId);
     res.json(await ticketTranscript(guild, req.params.ticketId));
+  });
+
+  // Onboarding: adding people (many at once) with the guide, their progress, editing the guide
+  router.get('/guilds/:guildId/team/onboarding', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    res.json(await onboardingOverview(guild));
+  });
+
+  router.put('/guilds/:guildId/team/onboarding/guide', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    await saveGuide(guild, req.body ?? {});
+    res.json(await onboardingOverview(guild));
+  });
+
+  router.post('/guilds/:guildId/team/onboard', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const results = await onboardPeople(guild, req.user, req.body ?? {});
+    res.json({ results, team: await teamOverview(guild) });
+  });
+
+  router.post('/guilds/:guildId/team/onboarding/:recordId/:action', async (req, res) => {
+    const guild = getGuild(client, req.params.guildId);
+    const { recordId, action } = req.params;
+    let text;
+    if (action === 'resend') text = (await resendGuide(guild, recordId)) === 'none' ? 'Couldn’t reach them: their DMs are closed.' : 'Sent again.';
+    else if (action === 'cancel') text = (await cancelOnboarding(guild, recordId), 'Cancelled.');
+    else if (action === 'rank') text = `Ranked ${await rankNow(guild, req.user, recordId)}.`;
+    else throw new HttpError(404, 'Unknown action.');
+    res.json({ text, ...(await onboardingOverview(guild)), team: action === 'rank' ? await teamOverview(guild) : undefined });
   });
 
   // Managing the team: the Roblox bot account, adding, role changes, suspending / removing, records, notices

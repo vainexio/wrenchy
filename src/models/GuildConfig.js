@@ -111,8 +111,51 @@ const DEFAULT_TEAM_GROUPS = [
   },
 ];
 
+// The onboarding guide (the owner, 2026-10-31): DMed to people added to the team, one step at a time with a Done
+// button that's checked: verify with Bloxlink (the Verified role), join the Roblox community (then they're ranked and
+// their roles updated), read these channels... Steps they've already done are skipped.
+const onboardingStepSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true },
+    kind: { type: String, enum: ['verify', 'group', 'channels', 'info'], default: 'info' },
+    title: { type: String, required: true },
+    text: { type: String, default: '' },
+    channelIds: { type: [String], default: [] }, // (a 'channels' step: the channels to read)
+    button: { type: String, default: 'Done' },
+  },
+  { _id: false },
+);
+
+const DEFAULT_ONBOARDING_STEPS = [
+  {
+    id: 'verify', kind: 'verify', title: 'Verify with Bloxlink', button: 'Done',
+    text: 'Verify your Roblox account with Bloxlink in the server (it sets your nickname to your Roblox name). Press Done when you have the Verified role.',
+  },
+  {
+    id: 'group', kind: 'group', title: 'Join the community', button: 'Done',
+    text: 'Join our Roblox community: {groupLink}\nPress Done once you’re in, and I’ll give you your {team} rank.',
+  },
+  {
+    id: 'channels', kind: 'channels', title: 'Read these channels', button: 'I’ve read them',
+    text: 'Please read these before you start:',
+  },
+];
+
+const onboardingSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    intro: { type: String, default: 'Welcome to the {team} team, {user}! A few quick steps to get you set up.' },
+    finish: { type: String, default: 'You’re all set. Welcome aboard! 🎉' },
+    groupLink: { type: String, default: '' }, // ('' = the group's page on Roblox)
+    fallbackChannelId: { type: String, default: null }, // (when their DMs are closed, the guide is posted here instead)
+    steps: { type: [onboardingStepSchema], default: () => DEFAULT_ONBOARDING_STEPS },
+  },
+  { _id: false },
+);
+
 const teamSchema = new mongoose.Schema(
   {
+    onboarding: { type: onboardingSchema, default: () => ({}) },
     groups: { type: [teamGroupSchema], default: () => DEFAULT_TEAM_GROUPS },
     inactiveDays: { type: Number, default: 7 },
     // (below these in the last 7 days = "Low activity", even when seen recently; 0 = off)

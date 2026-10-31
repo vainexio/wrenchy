@@ -5,6 +5,7 @@ import { useReportDirty } from './appContext.js';
 import { RoleChips } from './PanelParts.jsx';
 import TeamAdd from './TeamAdd.jsx';
 import TeamNotices from './TeamNotices.jsx';
+import TeamOnboarding from './TeamOnboarding.jsx';
 import { PersonPanel, TakeOffDialog } from './TeamPerson.jsx';
 import TeamRecords from './TeamRecords.jsx';
 import {
@@ -527,7 +528,7 @@ function Tracking({ data, scanning, onScan }) {
 }
 
 // ------------------------------------------------------------------ the tab
-const VIEWS = ['people', 'add', 'notices', 'records', 'settings'];
+const VIEWS = ['people', 'add', 'onboarding', 'notices', 'records', 'settings'];
 
 export default function TeamEditor({ guildId, onError }) {
   const toast = useToast();
@@ -683,7 +684,8 @@ export default function TeamEditor({ guildId, onError }) {
         onChange={goto}
         tabs={[
           { value: 'people', label: 'People', icon: 'users', count: people.length },
-          { value: 'add', label: 'Add member', icon: 'userPlus' },
+          { value: 'add', label: 'Add members', icon: 'userPlus' },
+          { value: 'onboarding', label: 'Onboarding', icon: 'check' },
           { value: 'notices', label: 'Notices', icon: 'chat' },
           { value: 'records', label: 'Records', icon: 'file' },
           { value: 'settings', label: 'Settings', icon: 'gear' },
@@ -715,10 +717,10 @@ export default function TeamEditor({ guildId, onError }) {
             people={people}
             onTeam={setTeam}
             onError={onError}
-            onAdded={(name) => setFilters({ ...FILTERS, sort: filters.sort, q: name })}
-            onSettings={() => goto('settings')}
+            onOnboarding={() => goto('onboarding')}
           />
         )}
+        {view === 'onboarding' && <TeamOnboarding guildId={guildId} guild={guild} onTeam={setTeam} onError={onError} />}
         {view === 'notices' && (
           <TeamNotices guildId={guildId} guild={guild} data={data} people={people} preset={noticeTo} onError={onError} onSent={() => setRecordsKey((k) => k + 1)} />
         )}

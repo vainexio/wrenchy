@@ -2,6 +2,7 @@ import { Client, Events, GatewayIntentBits, MessageFlags, PermissionsBitField } 
 import { commandData, commands } from './commands/index.js';
 import { handleRoleButton } from './interactions/roleButton.js';
 import { handleVerifyButton } from './interactions/verifyButton.js';
+import { ONBOARD_PREFIX, handleOnboarding } from './onboarding.js';
 import { TICKET_PREFIX, handleTicketInteraction } from './tickets.js';
 import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
 import { GuildConfig, getGuildConfig } from '../models/GuildConfig.js';
@@ -115,6 +116,14 @@ client.on(Events.ChannelDelete, (channel) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  // (the onboarding guide's Done button is pressed in DMs: before the server-only check)
+  if (interaction.isButton() && interaction.customId.startsWith(ONBOARD_PREFIX)) {
+    await handleOnboarding(interaction).catch((err) => {
+      console.error('[onboarding] button failed:', err);
+      if (!interaction.replied && !interaction.deferred) interaction.reply({ content: '⚠️ Something went wrong. Please try again.', flags: MessageFlags.Ephemeral }).catch(() => {});
+    });
+    return;
+  }
   if (!interaction.inCachedGuild()) return;
   if (interaction.isAutocomplete()) {
     await commands.get(interaction.commandName)?.autocomplete?.(interaction).catch(() => {});

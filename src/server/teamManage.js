@@ -111,7 +111,66 @@ export async function lookupRoblox(guild, username) {
   return { ...account, role, linkedTo: link ? { discordId: link.discordId, name: linkedMember?.displayName ?? null } : null };
 }
 
-/** Adds someone to a team group: their Roblox role (accepting their join request if needed) and Discord roles. */
+/** A 400 that says what's wrong, with a `code` callers can act on ('not-in-group', 'no-bot'...). */
+function problem(code, message) {
+  return Object.assign(new HttpError(400, message), { code });
+}
+
+/**
+ * Puts someone in a team group: on Roblox the group's role, unless they already hold one of its roles or a higher one
+ * (never a demotion; their join request is accepted if they sent one); on Discord the group's roles; shown as one
+ * person on the Team tab; a record. Used by Add members and the onboarding guide. Throws a problem() when they can't be
+ * ranked yet. Returns { name, ranked: { from, to } | null, problems }.
+ */
+export async function placeInGroup(guild, by, { member, group, robloxId, roleId, gc }) {
+  gc ??= await getGuildConfig(guild.id);
+  const problems = [];
+  let account = null;
+  let ranked = null;
+  if (robloxId) {
+    account = await getRobloxUser(robloxId);
+    if (!account) throw problem('no-account', 'That Roblox account no longer exists.');
+  }
+  if (robloxId && roleId) {
+    const { bot, roles } = await rankingInfo();
+    if (!bot.ok) throw problem('no-bot', 'The Roblox bot account isn’t set up, so nobody can be ranked yet.');
+    const role = roles.find((r) => r.id === roleId);
+    if (!role?.assignable) throw problem('no-bot', `The Roblox bot account can't give ${role?.name ?? 'that role'}: it needs a higher rank.`);
+    let current = await asBot(() => groupRoleOf(groupId(), robloxId));
+    if (!current) {
+      await acceptJoinRequest(groupId(), robloxId).catch(() => {});
+      current = await groupRoleOf(groupId(), robloxId).catch(() => null);
+    }
+    if (!current) throw problem('not-in-group', `@${account.username} isn't in the Roblox community yet.`);
+    const keep = group.robloxRoleIds.includes(current.id) || current.rank >= role.rank;
+    if (!keep) {
+      await asBot(() => setGroupRole(groupId(), robloxId, roleId));
+      ranked = { from: current.name, to: role.name };
+    }
+  }
+
+  const give = group.discordRoleIds.filter((id) => !member.roles.cache.has(id));
+  const blocked = give.filter((id) => !manageable(guild, id));
+  if (blocked.length) problems.push(`Wrenchy can't give ${blocked.map((id) => `@${guild.roles.cache.get(id)?.name ?? 'a deleted role'}`).join(', ')}`);
+  const giving = give.filter((id) => manageable(guild, id));
+  if (giving.length) await member.roles.add(giving, `Team: added to ${group.name} by ${by.name}`);
+
+  // (shown as one person on the Team tab, unless Bloxlink already links the account)
+  if (robloxId && !(await RobloxLink.exists({ robloxId }))) {
+    await TeamMatch.updateOne({ robloxId }, { $set: { discordId: member.id } }, { upsert: true });
+  }
+  forgetRoleMembers();
+  // (their bound Discord roles follow the new rank, as /update would)
+  await resyncLink(guild, gc, member, problems);
+  await TeamRecord.create({
+    guildId: guild.id, kind: 'added', robloxId, username: account?.username ?? null, discordId: member.id,
+    discordName: member.displayName, group: group.name, from: ranked?.from ?? null, to: ranked?.to ?? group.name,
+    by: byOf(by), snapshot: await snapshotOf(guild, robloxId, member, null), problems,
+  });
+  return { name: member.displayName, ranked, problems };
+}
+
+/** Adds someone to a team group from the dashboard (one person, their Roblox account known). */
 export async function addMember(guild, user, body) {
   const gc = await getGuildConfig(guild.id);
   const group = gc.team.groups.find((g) => g.name === body?.group);
@@ -122,51 +181,8 @@ export async function addMember(guild, user, body) {
   const roleId = Number(body.robloxRoleId) || null;
   if (group.robloxRoleIds.length && (!robloxId || !roleId)) throw new HttpError(400, 'Pick their Roblox account and role.');
   if (roleId && !group.robloxRoleIds.includes(roleId)) throw new HttpError(400, `That Roblox role isn't one of ${group.name}'s.`);
-
-  const problems = [];
-  let account = null;
-  let from = null;
-  let to = null;
-  if (robloxId) {
-    account = await getRobloxUser(robloxId);
-    if (!account) throw new HttpError(400, 'That Roblox account no longer exists.');
-  }
-  if (robloxId && roleId) {
-    const { roles } = await rankingInfo();
-    const role = roles.find((r) => r.id === roleId);
-    if (!role?.assignable) throw new HttpError(400, `The Roblox bot account can't give ${role?.name ?? 'that role'}: it needs a higher rank.`);
-    let current = await asBot(() => groupRoleOf(groupId(), robloxId));
-    if (!current) {
-      try {
-        await acceptJoinRequest(groupId(), robloxId);
-      } catch {
-        throw new HttpError(400, `@${account.username} isn't in the Roblox group yet. Ask them to join (or request to join), then try again.`);
-      }
-      current = await groupRoleOf(groupId(), robloxId).catch(() => null);
-    }
-    from = current?.name ?? 'Not in the group';
-    if (current?.id !== roleId) await asBot(() => setGroupRole(groupId(), robloxId, roleId));
-    to = role.name;
-  }
-
-  const give = group.discordRoleIds.filter((id) => !member.roles.cache.has(id));
-  const blocked = give.filter((id) => !manageable(guild, id));
-  if (blocked.length) problems.push(`Wrenchy can't give ${blocked.map((id) => `@${guild.roles.cache.get(id)?.name ?? 'a deleted role'}`).join(', ')}`);
-  const giving = give.filter((id) => manageable(guild, id));
-  if (giving.length) await member.roles.add(giving, `Team: added to ${group.name} by ${user.name}`);
-
-  // (shown as one person on the Team tab, unless Bloxlink already links the account)
-  if (robloxId && !(await RobloxLink.exists({ robloxId }))) {
-    await TeamMatch.updateOne({ robloxId }, { $set: { discordId: member.id } }, { upsert: true });
-  }
-  forgetRoleMembers();
-  await resyncLink(guild, gc, member, problems);
-  await TeamRecord.create({
-    guildId: guild.id, kind: 'added', robloxId, username: account?.username ?? null, discordId: member.id,
-    discordName: member.displayName, group: group.name, from, to: to ?? group.name, by: byOf(user),
-    snapshot: await snapshotOf(guild, robloxId, member, null), problems,
-  });
-  return { name: member.displayName, problems };
+  const result = await placeInGroup(guild, user, { member, group, robloxId, roleId, gc });
+  return { name: result.name, problems: result.problems };
 }
 
 /** Gives a team member another Roblox role; their Discord team roles follow the groups that role is in. */
