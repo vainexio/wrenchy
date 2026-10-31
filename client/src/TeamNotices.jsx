@@ -3,7 +3,7 @@ import { rankByName } from '../../src/shared/search.js';
 import { api } from './api.js';
 import { renderMarkdown } from './PanelParts.jsx';
 import { STATUSES, nameOf, namesOf, reachable } from './teamModel.js';
-import { Badge, Button, Card, Empty, Field, FilterMenu, Popover, SearchList, Segmented, ago, useConfirm, useToast } from './ui.jsx';
+import { Badge, Button, Card, Empty, Field, FilterMenu, Icon, Popover, SearchList, Segmented, ago, useConfirm, useToast } from './ui.jsx';
 
 // Notices: one message DMed to part of the team (a group, a type of people such as the inactive ones, or people
 // picked by hand), from Wrenchy. Each DM is also kept under Records.
@@ -64,8 +64,16 @@ function Progress({ n }) {
   return n.failed.length ? <Badge tone="warn">{n.sent} of {n.total} delivered</Badge> : <Badge tone="ok">{n.sent} delivered</Badge>;
 }
 
-function NoticeRow({ n }) {
+const namesLine = (list) => list.slice(0, 3).map((r) => r.name).join(', ') + (list.length > 3 ? ` +${list.length - 3}` : '');
+
+/** A sent notice: who it went to at a glance; opened, everyone with how it went, and sending it again. */
+function NoticeRow({ n, onReuse }) {
   const [open, setOpen] = useState(false);
+  const [only, setOnly] = useState('all');
+  const got = n.recipients.filter((r) => r.delivered === true);
+  const missed = n.recipients.filter((r) => r.delivered === false);
+  const waiting = n.recipients.filter((r) => r.delivered === null);
+  const shown = only === 'missed' ? missed : n.recipients;
   return (
     <li className={`record${open ? ' open' : ''}`}>
       <div className="record-main">
@@ -73,22 +81,56 @@ function NoticeRow({ n }) {
           <span className="grow record-text">
             <span className="notice-text">{n.message}</span>
             <span className="subtle">
-              {n.audience || `${n.total} people`} · {n.by?.name} · {ago(n.createdAt)}
+              To {n.recipients.length ? namesLine(n.recipients) : `${n.total} people`}
+              {n.audience ? ` · ${n.audience}` : ''} · {n.by?.name} · {ago(n.createdAt)}
             </span>
           </span>
           <Progress n={n} />
+          <Icon name="chevron" className={`record-chevron${open ? ' flip' : ''}`} />
         </button>
       </div>
       {open && (
         <div className="record-detail">
           <p className="record-message">{n.message}</p>
-          {n.failed.length > 0 && (
-            <>
-              <p className="subtle">Not delivered:</p>
-              <ul className="problems">
-                {n.failed.map((f) => <li key={f.discordId}>{f.name}: {f.error}</li>)}
-              </ul>
-            </>
+          <div className="recipients-bar">
+            <b>Sent to {n.recipients.length || n.total}</b>
+            <span className="subtle">
+              {got.length} got it{missed.length ? ` · ${missed.length} didn’t` : ''}{waiting.length ? ` · ${waiting.length} still sending` : ''}
+              {' · '}
+              {new Date(n.createdAt).toLocaleString()}
+            </span>
+            <span className="grow" />
+            {missed.length > 0 && (
+              <Segmented label="Show" value={only} onChange={setOnly} options={[{ value: 'all', label: 'Everyone' }, { value: 'missed', label: 'Didn’t get it', count: missed.length }]} />
+            )}
+          </div>
+          {!n.recipients.length ? (
+            <p className="subtle">Who it went to wasn’t saved for this one.</p>
+          ) : (
+            <ul className="recipient-grid">
+              {shown.map((r) => (
+                <li key={r.discordId} className={r.delivered === false ? 'missed' : ''} title={r.error ?? undefined}>
+                  {r.avatar ? <img src={r.avatar} alt="" /> : <span className="avatar-xs">{(r.name ?? '?')[0]}</span>}
+                  <span className="grow">
+                    {r.name}
+                    {r.error && <small>{r.error}</small>}
+                  </span>
+                  <span className="recipient-state">{r.delivered === true ? '✓' : r.delivered === false ? '✗' : '…'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {n.recipients.length > 0 && n.status !== 'sending' && (
+            <div className="row">
+              <Button size="sm" icon="chat" onClick={() => onReuse(n.recipients.map((r) => r.discordId), n)}>
+                Send another to these {n.recipients.length}
+              </Button>
+              {missed.length > 0 && (
+                <Button size="sm" variant="ghost" icon="send" onClick={() => onReuse(missed.map((r) => r.discordId), n)}>
+                  Send again to the {missed.length} who didn’t get it
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -144,6 +186,19 @@ export default function TeamNotices({ guildId, guild, data, people, preset, onEr
     : [groups.length ? groups.join(' + ') : 'Everyone', STATUSES.find((s) => s.value === status)?.label, ...roles].filter(Boolean).join(' · ');
   const sample = recipients[0] ? nameOf(recipients[0]) : 'Juan';
   const blocked = !recipients.length ? 'Nobody to send it to' : recipients.length > MAX_TO ? `At most ${MAX_TO} people per notice` : !message.trim() ? 'Write the notice' : null;
+
+  function reuse(discordIds, n) {
+    const keys = discordIds.map((id) => people.find((p) => p.discordId === id && reachable(p))?.key).filter(Boolean);
+    setMode('pick');
+    setPicked(keys);
+    setExcluded([]);
+    if (n.recipients.some((r) => r.delivered === false) && discordIds.length < n.recipients.length) setMessage(n.message);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const gone = discordIds.length - keys.length;
+    toast(gone
+      ? { tone: 'info', title: `Picked ${keys.length} of ${discordIds.length}`, text: `${gone} aren’t on the team or can’t get DMs any more.` }
+      : { tone: 'info', title: `Picked the ${keys.length} people`, text: 'Write the notice above.' });
+  }
 
   async function send() {
     const ok = await confirm({
@@ -281,7 +336,7 @@ export default function TeamNotices({ guildId, guild, data, people, preset, onEr
           </Empty>
         ) : (
           <ul className="records">
-            {history.map((n) => <NoticeRow key={n.id} n={n} />)}
+            {history.map((n) => <NoticeRow key={n.id} n={n} onReuse={reuse} />)}
           </ul>
         )}
       </Card>

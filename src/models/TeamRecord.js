@@ -42,6 +42,9 @@ const noticeSchema = new mongoose.Schema(
     total: { type: Number, default: 0 },
     sent: { type: Number, default: 0 },
     failed: { type: [{ discordId: String, name: String, error: String }], default: [] },
+    // (everyone it's for, and how it went for each, so the dashboard can say who it was sent to)
+    to: { type: [String], default: [] },
+    recipients: { type: [{ discordId: String, name: String, delivered: Boolean, error: String, _id: false }], default: [] },
     status: { type: String, enum: ['sending', 'done'], default: 'sending' },
     finishedAt: { type: Date, default: null },
   },

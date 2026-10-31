@@ -806,3 +806,12 @@ input.check:indeterminate::after { content: ''; width: 8px; height: 2px; backgro
 .takeoff-list { list-style: none; margin: 0 0 12px; padding: 4px 10px; max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .takeoff-list li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--border); font-size: 0.86rem; }
 .takeoff-list li:first-child { border-top: none; }
+.recipients-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.88rem; }
+.recipient-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; max-height: 280px; overflow-y: auto; }
+.recipient-grid li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 10px; background: var(--surface-2); font-size: 0.85rem; min-width: 0; }
+.recipient-grid li .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recipient-grid li small { display: block; color: var(--warning); font-size: 0.74rem; overflow: hidden; text-overflow: ellipsis; }
+.recipient-grid li img { width: 24px; height: 24px; border-radius: 50%; flex: none; }
+.recipient-grid li.missed { background: var(--warning-soft); }
+.recipient-state { font-weight: 700; color: var(--success); }
+.recipient-grid li.missed .recipient-state { color: var(--warning); }

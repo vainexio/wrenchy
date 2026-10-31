@@ -354,6 +354,7 @@ async function deliver(guild, notice, ids) {
     }
     if (error) notice.failed.push({ discordId: id, name: member?.displayName ?? id, error });
     else notice.sent += 1;
+    notice.recipients.push({ discordId: id, name: member?.displayName ?? id, delivered: !error, error });
     records.push({
       // (the message as they got it, their name filled in)
       guildId: guild.id, kind: 'notice', discordId: id, discordName: member?.displayName ?? null,
@@ -378,7 +379,7 @@ export async function sendNotice(guild, user, body) {
   if (!ids.length) throw new HttpError(400, 'Nobody to send it to.');
   if (ids.length > MAX_NOTICE_TO) throw new HttpError(400, `At most ${MAX_NOTICE_TO} people per notice.`);
   const notice = await Notice.create({
-    guildId: guild.id, message, audience: String(body.audience ?? '').slice(0, 200), by: byOf(user), total: ids.length,
+    guildId: guild.id, message, audience: String(body.audience ?? '').slice(0, 200), by: byOf(user), total: ids.length, to: ids,
   });
   deliver(guild, notice, ids).catch(async (err) => {
     console.error('[team] notice failed:', err);
@@ -396,7 +397,37 @@ function noticeOut({ _id, __v, ...n }) {
   return { id: String(_id), ...n, status: stopped ? 'stopped' : n.status };
 }
 
+/**
+ * The sent notices, newest first, each with who it went to: [{ discordId, name, avatar, delivered (null = not yet) }].
+ * Notices sent before their recipients were saved get them from each DM's record (written as the notice finished).
+ */
 export async function listNotices(guild) {
   const rows = await Notice.find({ guildId: guild.id }).sort({ createdAt: -1 }).limit(30).lean();
-  return rows.map(noticeOut);
+  const old = rows.filter((n) => !n.recipients?.length && n.sent + n.failed.length > 0);
+  const recordsOf = new Map();
+  if (old.length) {
+    const from = new Date(Math.min(...old.map((n) => new Date(n.createdAt).getTime())));
+    const records = await TeamRecord.find({ guildId: guild.id, kind: 'notice', createdAt: { $gte: from } }).sort({ createdAt: 1 }).lean();
+    for (const n of old) {
+      const start = new Date(n.createdAt).getTime();
+      const end = new Date(n.finishedAt ?? n.updatedAt).getTime() + 2 * 60_000;
+      recordsOf.set(String(n._id), records.filter((r) => {
+        const at = new Date(r.createdAt).getTime();
+        return r.by?.id === n.by?.id && at >= start && at <= end;
+      }));
+    }
+  }
+  return rows.map((n) => {
+    const done = n.recipients?.length
+      ? n.recipients
+      : (recordsOf.get(String(n._id)) ?? []).map((r) => ({ discordId: r.discordId, name: r.discordName ?? r.discordId, delivered: r.delivered, error: r.problems?.[0] ?? null }));
+    const seen = new Set(done.map((r) => r.discordId));
+    const waiting = (n.to ?? []).filter((id) => !seen.has(id)).map((id) => ({ discordId: id, name: guild.members.cache.get(id)?.displayName ?? id, delivered: null, error: null }));
+    const recipients = [...done, ...waiting].map((r) => {
+      const member = guild.members.cache.get(r.discordId);
+      return { ...r, name: member?.displayName ?? r.name, avatar: member?.user.displayAvatarURL({ size: 64 }) ?? null };
+    });
+    const { to, ...rest } = n;
+    return noticeOut({ ...rest, recipients });
+  });
 }
