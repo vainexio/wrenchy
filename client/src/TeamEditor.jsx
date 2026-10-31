@@ -9,7 +9,7 @@ import TeamOnboarding from './TeamOnboarding.jsx';
 import { PersonPanel, TakeOffDialog } from './TeamPerson.jsx';
 import TeamRecords from './TeamRecords.jsx';
 import {
-  ACCOUNTS, ACCOUNT_FILTERS, STATUSES, STATUS_TONE, hours, lastOnDiscord, mergePeople, nameOf, namesOf, played, reachable,
+  ACCOUNTS, ACCOUNT_FILTERS, STATUSES, STATUS_TONE, hours, lastOnDiscord, mergePeople, nameOf, namesOf, reachable,
   statusLabel,
 } from './teamModel.js';
 import { MatchActions } from './teamPickers.jsx';
@@ -58,20 +58,31 @@ function sortPeople(list, sort) {
 // ------------------------------------------------------------------ the cells
 function GameCell({ p }) {
   if (!p.robloxId) return <div className="when"><span>—</span></div>;
-  const week = p.play ? <span className={p.lowGame ? 'warn-text' : ''}>{hours(p.play.week)} this week</span> : <span>{played(p.game?.minutes)}</span>;
   if (p.game?.online) {
     return (
       <div className="when">
         <b className="ok">● In game now</b>
-        {week}
+        <span>{p.game.game}</span>
       </div>
     );
   }
   if (!p.game) return <div className="when"><b className="bad">Never</b><span>since tracking began</span></div>;
   return (
-    <div className="when" title={`${day(p.game.lastSeenAt)} · ${p.game.game} · ${played(p.game.minutes)} in all`}>
+    <div className="when" title={day(p.game.lastSeenAt)}>
       <b className={p.inactiveGame ? 'bad' : ''}>{ago(p.game.lastSeenAt)}</b>
-      {week}
+      <span>{p.game.game}</span>
+    </div>
+  );
+}
+
+// (how long they've played: in all, then this week)
+function PlayedCell({ p }) {
+  if (!p.robloxId) return <div className="when"><span>—</span></div>;
+  const total = p.game?.minutes ?? 0;
+  return (
+    <div className="when" title={p.game?.sessions ? `${p.game.sessions} sessions · about ${hours(total / p.game.sessions)} each` : undefined}>
+      <b className={total ? '' : 'bad'}>{hours(total)}</b>
+      {p.play && <span className={p.lowGame ? 'warn-text' : ''}>{hours(p.play.week)} this week</span>}
     </div>
   );
 }
@@ -148,6 +159,10 @@ function Person({ p, channels, showGroups, selected, onSelect, onOpen, ...action
       <div>
         <span className="cell-label">Game</span>
         <GameCell p={p} />
+      </div>
+      <div>
+        <span className="cell-label">Played</span>
+        <PlayedCell p={p} />
       </div>
       <div>
         <span className="cell-label">Discord</span>
@@ -329,7 +344,8 @@ function People({ data, people, guild, busy, filters, setFilters, matchProps, se
                 <Check checked={allShownSelected} indeterminate={!allShownSelected && someShownSelected} onChange={selectShown} label="Select everyone shown" />
               </div>
               <SortHead id="name" label="Person" sort={sort} onSort={(s) => setFilters({ sort: s })} />
-              <SortHead id="played" label="Game" sort={sort} onSort={(s) => setFilters({ sort: s })} />
+              <SortHead id="played" label="Last played" sort={sort} onSort={(s) => setFilters({ sort: s })} />
+              <SortHead id="playtime" label="Time played" sort={sort} onSort={(s) => setFilters({ sort: s })} />
               <SortHead id="message" label="Discord" sort={sort} onSort={(s) => setFilters({ sort: s })} />
               <SortHead id="activity" label="Status" sort={sort} onSort={(s) => setFilters({ sort: s })} />
               <span className="sr-only">Actions</span>

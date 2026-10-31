@@ -86,17 +86,17 @@ function GameActivity({ p, minimum }) {
     <div className="activity">
       <div className="activity-head">
         <div>
-          <b className={p.lowGame ? 'warn-text' : ''}>{hours(g?.week ?? 0)}</b> played this week
+          <b>{hours(p.game?.minutes ?? 0)}</b> played in all
         </div>
-        <span className="subtle">{p.game?.online ? 'In game now' : `Last ${p.game ? ago(p.game.lastSeenAt) : 'never'}`}</span>
+        <span className="subtle">{p.game?.online ? `In ${p.game.game} now` : `Last ${p.game ? ago(p.game.lastSeenAt) : 'never'}`}</span>
       </div>
       {g && <DayBars values={g.daily} fmt={(v) => hours(v)} label="Minutes played per day, last 30 days" floor={60} />}
       {g && (
         <div className="facts four">
+          <div><span>This week</span><b className={p.lowGame ? 'warn-text' : ''}>{hours(g.week)}</b></div>
           <div><span>30 days</span><b>{hours(g.month)}</b></div>
           <div><span>Days played</span><b>{g.activeDays} of 30</b></div>
-          <div><span>Sessions</span><b>{g.sessions}</b></div>
-          <div><span>All time</span><b>{hours(p.game?.minutes ?? 0)}</b></div>
+          <div><span>Per session</span><b>{p.game?.sessions ? hours(p.game.minutes / p.game.sessions) : '—'}</b><small>{p.game?.sessions ?? 0} sessions</small></div>
         </div>
       )}
       {p.lowGame && <Notice tone="warn">Below the minimum of {minimum} minutes played a week.</Notice>}
@@ -337,6 +337,11 @@ export function PersonPanel({ p, guildId, admin, settings, channels, matchProps,
           </section>
 
           <section>
+            <h3>Game time</h3>
+            <GameActivity p={p} minimum={settings.minMinutesWeek} />
+          </section>
+
+          <section>
             <h3>Chat, last 30 days</h3>
             <ChatActivity p={p} minimum={settings.minMessagesWeek} channel={channel} />
           </section>
@@ -344,11 +349,6 @@ export function PersonPanel({ p, guildId, admin, settings, channels, matchProps,
           <section>
             <h3>Voice, last 30 days</h3>
             <VoiceActivity p={p} />
-          </section>
-
-          <section>
-            <h3>Game, last 30 days</h3>
-            <GameActivity p={p} minimum={settings.minMinutesWeek} />
           </section>
 
           <section>

@@ -529,7 +529,7 @@ button.stat.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent
 .stat.ok .stat-value { color: var(--success); }
 .stat.warn .stat-value { color: var(--warning); }
 
-.team-head, .team-row { display: grid; grid-template-columns: 22px minmax(0, 1.7fr) minmax(100px, 130px) minmax(100px, 130px) 92px 128px; gap: 14px; align-items: center; }
+.team-head, .team-row { display: grid; grid-template-columns: 22px minmax(0, 1.7fr) minmax(96px, 124px) minmax(84px, 104px) minmax(100px, 130px) 92px 128px; gap: 14px; align-items: center; }
 .team-head { padding: 4px 20px; border-bottom: 1px solid var(--border); }
 .row-check { display: flex; align-items: center; }
 .sort-head {
@@ -561,16 +561,17 @@ button.stat.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent
   .team-head { grid-template-columns: 22px 1fr; }
   .team-head > :nth-child(n + 3) { display: none; }
   .team-row {
-    grid-template-columns: 22px 1fr 1fr auto; grid-template-areas: 'check who who actions' '. game msg status';
+    grid-template-columns: 22px 1fr 1fr 1fr auto; grid-template-areas: 'check who who who actions' '. game played msg status';
     column-gap: 10px; row-gap: 6px; padding: 10px 16px;
   }
   .team-row > :nth-child(1) { grid-area: check; }
   .team-row > :nth-child(2) { grid-area: who; }
   .team-row > :nth-child(3) { grid-area: game; }
-  .team-row > :nth-child(4) { grid-area: msg; }
-  .team-row > :nth-child(5) { grid-area: status; align-self: end; }
-  .team-row > :nth-child(6) { grid-area: actions; }
-  .team-row > :nth-child(5) .cell-label, .when span:not(.warn-text) { display: none; }
+  .team-row > :nth-child(4) { grid-area: played; }
+  .team-row > :nth-child(5) { grid-area: msg; }
+  .team-row > :nth-child(6) { grid-area: status; align-self: end; }
+  .team-row > :nth-child(7) { grid-area: actions; }
+  .team-row > :nth-child(6) .cell-label, .when span:not(.warn-text) { display: none; }
   .team-row .who .avatar-sm { width: 30px; height: 30px; }
   .cell-label { display: block; font-size: 0.7rem; font-weight: 600; color: var(--text-3); }
 }
