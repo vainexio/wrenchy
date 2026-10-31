@@ -803,3 +803,6 @@ input.check:indeterminate::after { content: ''; width: 8px; height: 2px; backgro
 .guide-step-head { display: flex; align-items: center; gap: 8px; }
 .guide-step-head select { flex: 1; min-width: 0; width: auto; height: 32px; font-size: 0.84rem; }
 @media (max-width: 760px) { .onboard-row { flex-direction: column; } .onboard-actions { justify-content: flex-start; } }
+.takeoff-list { list-style: none; margin: 0 0 12px; padding: 4px 10px; max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.takeoff-list li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--border); font-size: 0.86rem; }
+.takeoff-list li:first-child { border-top: none; }

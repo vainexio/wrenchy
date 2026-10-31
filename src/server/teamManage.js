@@ -287,10 +287,10 @@ export async function takeOff(guild, user, body) {
   return { results };
 }
 
-/** Gives a suspended person back what they had. */
+/** Gives a suspended or removed person back what they had (Reinstate / Undo on Records). */
 export async function reinstate(guild, user, recordId) {
-  const record = await TeamRecord.findOne({ _id: recordId, guildId: guild.id, kind: 'suspended', reinstatedAt: null }).catch(() => null);
-  if (!record) throw new HttpError(404, 'That suspension is not active.');
+  const record = await TeamRecord.findOne({ _id: recordId, guildId: guild.id, kind: { $in: ['suspended', 'removed'] }, reinstatedAt: null }).catch(() => null);
+  if (!record) throw new HttpError(404, 'That was undone already.');
   const problems = [];
   const info = await rankingInfo();
   const role = info.roles.find((r) => r.id === record.previous.robloxRoleId);

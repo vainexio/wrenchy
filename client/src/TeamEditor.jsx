@@ -222,6 +222,13 @@ function People({ data, people, guild, busy, filters, setFilters, matchProps, se
   const allRoles = [...new Set(people.flatMap((p) => [...p.robloxRoles, ...p.discordRoles]))].sort();
 
   const shownKeys = shown.map((p) => p.key);
+  // (anyone the filters hide is unticked: actions only ever touch people you can see. The owner, 2026-10-31, after
+  //  bulk Remove demoted people ticked earlier and then filtered out of view)
+  const shownSig = shownKeys.join(',');
+  useEffect(() => {
+    const visible = new Set(shownKeys);
+    setSelected((list) => (list.every((k) => visible.has(k)) ? list : list.filter((k) => visible.has(k))));
+  }, [shownSig]);
   const allShownSelected = shown.length > 0 && shownKeys.every((k) => selected.includes(k));
   const someShownSelected = shownKeys.some((k) => selected.includes(k));
   const selectShown = (on) => setSelected(on ? [...new Set([...selected, ...shownKeys])] : selected.filter((k) => !shownKeys.includes(k)));

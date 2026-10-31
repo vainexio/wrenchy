@@ -117,7 +117,8 @@ export function TakeOffDialog({ kind, people, guildId, admin, onClose, onTeam, o
   const t = TAKE_OFF[kind];
   const one = people.length === 1;
   const anyRoblox = people.some((p) => p.robloxId);
-  const names = people.slice(0, 6).map(nameOf).join(', ') + (people.length > 6 ? ` and ${people.length - 6} more` : '');
+  const byGroup = new Map();
+  for (const p of people) for (const g of p.groups ?? []) byGroup.set(g, (byGroup.get(g) ?? 0) + 1);
 
   async function submit() {
     setBusy(true);
@@ -156,7 +157,21 @@ export function TakeOffDialog({ kind, people, guildId, admin, onClose, onTeam, o
         </>
       }
     >
-      {!one && <p className="muted">{names}</p>}
+      {!one && (
+        <>
+          <p className="muted">
+            {people.length} people: {[...byGroup].map(([g, n]) => `${n} in ${g}`).join(', ')}. Check every name:
+          </p>
+          <ul className="takeoff-list">
+            {people.map((p) => (
+              <li key={p.key}>
+                <b>{nameOf(p)}</b>
+                <span className="subtle">{[p.username && `@${p.username}`, ...(p.groups ?? [])].filter(Boolean).join(' · ')}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <ul className="consequences">
         {anyRoblox && admin?.bot.ok && <li>Their team role on Roblox becomes <b>{admin.baseRole?.name ?? 'the lowest role'}</b>.</li>}
         <li>Their team roles on Discord come off.</li>

@@ -116,7 +116,7 @@ export default function TeamRecords({ guildId, onError, onTeam, reloadKey }) {
 
   async function reinstate(r) {
     const ok = await confirm({
-      title: `Reinstate ${whoOf(r)}?`,
+      title: r.kind === 'removed' ? `Undo removing ${whoOf(r)}?` : `Reinstate ${whoOf(r)}?`,
       text: `They get back ${r.from ?? 'their Roblox role'} on Roblox and their team roles on Discord.`,
       confirmLabel: 'Reinstate',
     });
@@ -176,7 +176,19 @@ export default function TeamRecords({ guildId, onError, onTeam, reloadKey }) {
         ) : (
           <>
             <ul className="records">
-              {shown.slice(0, limit).map((r) => <RecordRow key={r.id} r={r} />)}
+              {shown.slice(0, limit).map((r) => (
+                <RecordRow
+                  key={r.id}
+                  r={r}
+                  action={
+                    r.kind === 'removed' && !r.reinstatedAt ? (
+                      <Button size="sm" icon="undo" loading={busy === r.id} disabled={Boolean(busy)} onClick={() => reinstate(r)} title="Give them back what they had">
+                        Undo
+                      </Button>
+                    ) : null
+                  }
+                />
+              ))}
             </ul>
             {shown.length > limit && (
               <div className="card-foot center">
