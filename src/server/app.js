@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import mongoose from 'mongoose';
+import { config } from '../config.js';
 import { VerificationLog } from '../models/Verification.js';
 import { createApiRouter } from './api.js';
 import { createAuthRoutes } from './auth.js';
@@ -71,8 +72,14 @@ export function createApp(discordClient) {
 
   // React dashboard (built with `npm run build`)
   if (fs.existsSync(clientDist)) {
-    app.use(express.static(clientDist));
-    app.get('/{*splat}', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+    // (Google Search Console's ownership tag, so the owner can ask Google to review a "Dangerous site" warning)
+    const verify = config.googleSiteVerification
+      ? `<meta name="google-site-verification" content="${config.googleSiteVerification.replace(/[^\w-]/g, '')}" />
+  </head>`
+      : '</head>';
+    const page = fs.readFileSync(path.join(clientDist, 'index.html'), 'utf8').replace('</head>', verify);
+    app.use(express.static(clientDist, { index: false }));
+    app.get('/{*splat}', (_req, res) => res.type('html').send(page));
   } else {
     app.get('/', (_req, res) => res.send('Wrenchy is running. Run `npm run build` to enable the dashboard.'));
   }

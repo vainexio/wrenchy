@@ -37,5 +37,6 @@ export const config = {
   flagChannelId: process.env.FLAG_CHANNEL_ID || '1561264779505705040',
   defaultRobloxGroupId: Number(process.env.ROBLOX_GROUP_ID) || 196288263,
   adminRoleId: process.env.ADMIN_ROLE_ID || '1560157523984646154',
+  googleSiteVerification: process.env.GOOGLE_SITE_VERIFICATION || null,
   publicUrl: (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`).replace(/\/$/, ''),
 };

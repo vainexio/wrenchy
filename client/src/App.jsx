@@ -75,6 +75,7 @@ function Login({ bot, status, statusError, error }) {
           <span className="eyebrow">Piyesa Studios</span>
           <h1>Wrenchy dashboard</h1>
           <p className="muted">For the Piyesa team. Log in with Discord to manage the server.</p>
+          <p className="subtle">You sign in on discord.com itself. Wrenchy never sees your password.</p>
         </div>
         {error && <Notice tone="error">{error}</Notice>}
         <a className="btn discord" href="/api/auth/login">
