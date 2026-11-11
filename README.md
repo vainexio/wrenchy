@@ -61,6 +61,16 @@ The game's auto-farm watch (`ServerScriptService.Modules.AntiCheat`) flags playe
 
 It's flag only: the game never punishes anyone for a flag. There's no server ID in the post. Mods search the username on the in-game admin panel (**FLAGS** page, or the player's profile). Wrenchy needs **View Channel**, **Send Messages** and **Embed Links** in that channel.
 
+### Public ban log
+Every ban made in Mangingisda (from the admin panel, or by the anti-cheat on its own) is posted in a public channel: `BAN_CHANNEL_ID`, default `1569981290193887282`. The post shows the player, a **broad reason** ("Exploiting", "Harassment"...) and the length. It never shows the moderator's own words, the evidence, or who banned them.
+
+- The game (`ServerScriptService.Modules.PublicBans`) sends each ban to `POST /api/game/ban` and each unban to `POST /api/game/unban`, with the same `X-Wrenchy-Key`.
+- One post per player while their ban stands: a second report (the game retrying, a new length) edits that post.
+- An unban **deletes** the post, so a ban that was lifted or made by mistake doesn't stay up.
+- What was posted is kept in the `publicbans` collection (player, reason, length, the message).
+
+Wrenchy needs **View Channel**, **Send Messages** and **Embed Links** in the ban channel.
+
 ### Team activity
 The dashboard's **Team** tab lists every tester and staff member with when they last **played** and last **chatted in Discord**, and flags who's been quiet for longer than the set days (default 7).
 

@@ -3,11 +3,13 @@ import { EmbedBuilder, escapeMarkdown } from 'discord.js';
 import express from 'express';
 import { config } from '../config.js';
 import { PlayerActivity, PlayerDaily } from '../models/Activity.js';
+import { PublicBan } from '../models/PublicBan.js';
 import { dayKey } from '../team/days.js';
 import { rememberRoles } from '../roblox/api.js';
 import { HttpError } from './errors.js';
 
-// Endpoints the Roblox game server calls: team presence (Modules.TeamActivity) and auto-farm flags (Modules.AntiCheat).
+// Endpoints the Roblox game server calls: team presence (Modules.TeamActivity), auto-farm flags (Modules.AntiCheat) and
+// the public ban log (Modules.PublicBans).
 // Authenticated with a shared key in the X-Wrenchy-Key header (the game keeps it in its Secrets Store). (Linking a
 // Discord account in the game, /link and /roles, was removed 2026-10-25: Bloxlink links everyone, roblox/verified.js)
 
@@ -74,6 +76,51 @@ function flagEmbed(flag, place) {
     .setTimestamp(Number.isFinite(at) && at > 0 ? new Date(at * 1000) : new Date());
 }
 
+// THE PUBLIC BAN LOG. The game reports each ban (the admin panel's, and the anti-cheat's own) with a BROAD reason
+// ("Exploiting"), never the moderator's words and never who banned: the post is for everyone to read.
+const BAN_COLOR = 0xd04a4a;
+
+/** One reported ban, checked, or null if it doesn't name a real player. */
+function readBan(raw) {
+  const robloxId = Number(raw?.userId);
+  const username = clip(raw?.username, 40);
+  if (!Number.isSafeInteger(robloxId) || robloxId <= 0 || !username) return null;
+  const seconds = Number(raw?.seconds);
+  const at = Number(raw?.at);
+  return {
+    robloxId,
+    username,
+    displayName: clip(raw?.displayName, 40) || username,
+    // (one line, short: the game sends a category, and nothing longer is ever shown)
+    reason: clip(raw?.reason, 60).replace(/\s+/g, ' ').trim() || 'Breaking the game rules',
+    seconds: Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : -1,
+    bannedAt: Number.isFinite(at) && at > 0 ? new Date(at * 1000) : new Date(),
+  };
+}
+
+function banLength(seconds) {
+  if (seconds < 0) return 'Permanent';
+  const days = Math.round(seconds / 86400);
+  if (days >= 1) return `${days} day${days === 1 ? '' : 's'}`;
+  const hours = Math.max(1, Math.round(seconds / 3600));
+  return `${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
+function banEmbed(ban, gameName) {
+  const who = ban.displayName === ban.username ? `@${ban.username}` : `${ban.displayName} (@${ban.username})`;
+  return new EmbedBuilder()
+    .setColor(BAN_COLOR)
+    .setTitle('🔨 Player banned')
+    .setURL(`https://www.roblox.com/users/${ban.robloxId}/profile`)
+    .addFields(
+      { name: 'Player', value: escapeMarkdown(who), inline: true },
+      { name: 'Reason', value: escapeMarkdown(ban.reason), inline: true },
+      { name: 'Length', value: banLength(ban.seconds), inline: true },
+    )
+    .setFooter({ text: gameName })
+    .setTimestamp(ban.bannedAt);
+}
+
 export function createGameRouter(client) {
   const router = express.Router();
   router.use(requireGameKey);
@@ -96,6 +143,55 @@ export function createGameRouter(client) {
     if (!channel?.isTextBased()) throw new HttpError(502, `Can't post in the flag channel (${config.flagChannelId}).`);
     await channel.send({ embeds, allowedMentions: { parse: [] } });
     res.json({ ok: true, posted: embeds.length });
+  });
+
+  // Bans, for the public ban channel: up to 10 at a time. One post per player while their ban stands: a second report
+  // (the game retrying, a new length) edits that post in place.
+  router.post('/ban', async (req, res) => {
+    const gameName = clip(req.body?.game, 40) || 'Mangingisda';
+    const bans = (Array.isArray(req.body?.bans) ? req.body.bans.slice(0, 10) : []).map(readBan).filter(Boolean);
+    if (!bans.length) throw new HttpError(400, 'No bans.');
+
+    const channel = await client.channels.fetch(config.banChannelId).catch(() => null);
+    if (!channel?.isTextBased()) throw new HttpError(502, `Can't post in the ban channel (${config.banChannelId}).`);
+
+    let posted = 0;
+    for (const ban of bans) {
+      const embed = banEmbed(ban, gameName);
+      const open = await PublicBan.findOne({ robloxId: ban.robloxId, liftedAt: null });
+      let message = null;
+      if (open?.messageId && open.channelId === channel.id) {
+        message = await channel.messages.edit(open.messageId, { embeds: [embed] }).catch(() => null);
+      }
+      if (!message) message = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+      await PublicBan.findOneAndUpdate(
+        { robloxId: ban.robloxId, liftedAt: null },
+        { $set: { ...ban, game: gameName, channelId: channel.id, messageId: message.id } },
+        { upsert: true },
+      );
+      posted += 1;
+    }
+    res.json({ ok: true, posted });
+  });
+
+  // Unbans: the player's public post comes down (a ban that was lifted, or made by mistake, shouldn't stay up).
+  router.post('/unban', async (req, res) => {
+    const ids = (Array.isArray(req.body?.userIds) ? req.body.userIds.slice(0, 20) : [])
+      .map(Number)
+      .filter((id) => Number.isSafeInteger(id) && id > 0);
+    if (!ids.length) throw new HttpError(400, 'No players.');
+
+    let removed = 0;
+    for (const robloxId of ids) {
+      const open = await PublicBan.findOne({ robloxId, liftedAt: null });
+      if (!open) continue;
+      const channel = open.channelId ? await client.channels.fetch(open.channelId).catch(() => null) : null;
+      if (channel?.isTextBased() && open.messageId) await channel.messages.delete(open.messageId).catch(() => null);
+      open.liftedAt = new Date();
+      await open.save();
+      removed += 1;
+    }
+    res.json({ ok: true, removed });
   });
 
   // Who of the group is playing (the Team tab: last played, time in game). A game server reports group members (rank
