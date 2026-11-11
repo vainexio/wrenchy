@@ -71,6 +71,14 @@ Every ban made in Mangingisda (from the admin panel, or by the anti-cheat on its
 
 Wrenchy needs **View Channel**, **Send Messages** and **Embed Links** in the ban channel.
 
+### Sticky messages
+`/sticky set [channel]` opens a box to type a message (several lines, Discord formatting) that Wrenchy keeps as the **last message** of the channel; `/sticky remove [channel]` takes it down. Dashboard role only.
+
+- Whenever anything else is posted in the channel (a member, another bot, Wrenchy's own ban posts), a new copy goes up at the bottom and the old copy is deleted. Several posts in a row move it once, about 3 seconds after the last (15 seconds at most in a channel that never goes quiet).
+- A copy **never pings**: mentions in it show but notify nobody, and it's sent silently. Post an announcement by hand if people should be pinged.
+- One sticky per channel; `/sticky set` again starts from the current text. Deleting the copy by hand brings it back; only `/sticky remove` ends it. After a restart, a sticky that got buried while the bot was down is moved back.
+- Kept in the `stickies` collection. Wrenchy needs **View Channel** and **Send Messages** in the channel.
+
 ### Team activity
 The dashboard's **Team** tab lists every tester and staff member with when they last **played** and last **chatted in Discord**, and flags who's been quiet for longer than the set days (default 7).
 
@@ -102,6 +110,7 @@ The role is re-checked on every request, so removing it revokes access immediate
 - `/ping`: checks if the bot is alive
 - `/inactive`: testers and staff who haven't played or chatted for a while
 - `/ticket`: add or remove someone, close, rename, claim or get the transcript of the ticket you're in
+- `/sticky`: keep a message at the bottom of a channel (set, remove)
 
 ## Setup
 

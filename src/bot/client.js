@@ -1,8 +1,10 @@
 import { Client, Events, GatewayIntentBits, MessageFlags, PermissionsBitField } from 'discord.js';
 import { commandData, commands } from './commands/index.js';
+import { handleStickyModal } from './commands/sticky.js';
 import { handleRoleButton } from './interactions/roleButton.js';
 import { handleVerifyButton } from './interactions/verifyButton.js';
 import { ONBOARD_PREFIX, handleOnboarding } from './onboarding.js';
+import { STICKY_PREFIX, forgetSticky, loadStickies, onStickyDelete, onStickyMessage } from './sticky.js';
 import { TICKET_PREFIX, handleTicketInteraction } from './tickets.js';
 import { ROLE_BUTTON_PREFIX, VERIFY_BUTTON_ID } from './panel.js';
 import { GuildConfig, getGuildConfig } from '../models/GuildConfig.js';
@@ -54,6 +56,8 @@ client.once(Events.ClientReady, async (c) => {
 
   await removeLinkPanels(c);
   startDiscordActivity(c);
+  // (sticky messages: back at the bottom of their channels if anything was posted while the bot was down)
+  loadStickies(c).catch((err) => console.error('[sticky] loading failed:', err.message));
   // (the member and role lists the Team tab needs, loaded now rather than on the first page view)
   for (const guild of c.guilds.cache.values()) {
     const started = Date.now();
@@ -65,6 +69,9 @@ client.once(Events.ClientReady, async (c) => {
 });
 
 client.on(Events.MessageCreate, recordMessage);
+// (a channel's sticky message stays its last one: bot/sticky.js)
+client.on(Events.MessageCreate, onStickyMessage);
+client.on(Events.MessageDelete, onStickyDelete);
 
 // The Roblox link panel ("Link Roblox": a code typed in the game) is gone since 2026-10-25, the owner: "bloxlink
 // handles the linking". Its message, if one was posted, is deleted once so nobody presses a dead button
@@ -113,6 +120,7 @@ client.on(Events.ChannelDelete, (channel) => {
   const now = new Date();
   Ticket.updateOne({ channelId: channel.id, status: 'open' }, { $set: { status: 'deleted', deletedAt: now } }).catch(() => {});
   Ticket.updateOne({ channelId: channel.id, status: 'closed', deletedAt: null }, { $set: { deletedAt: now } }).catch(() => {});
+  forgetSticky(channel.id);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -134,6 +142,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) handler = commands.get(interaction.commandName)?.execute;
   else if ((interaction.isButton() || interaction.isAnySelectMenu() || interaction.isModalSubmit()) && interaction.customId.startsWith(TICKET_PREFIX)) {
     handler = handleTicketInteraction;
+  } else if (interaction.isModalSubmit() && interaction.customId.startsWith(STICKY_PREFIX)) {
+    handler = handleStickyModal;
   } else if (interaction.isButton()) {
     handler = interaction.customId.startsWith(ROLE_BUTTON_PREFIX)
       ? handleRoleButton

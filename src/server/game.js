@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { EmbedBuilder, escapeMarkdown } from 'discord.js';
 import express from 'express';
+import { nudgeSticky } from '../bot/sticky.js';
 import { config } from '../config.js';
 import { PlayerActivity, PlayerDaily } from '../models/Activity.js';
 import { PublicBan } from '../models/PublicBan.js';
@@ -156,6 +157,7 @@ export function createGameRouter(client) {
     if (!channel?.isTextBased()) throw new HttpError(502, `Can't post in the ban channel (${config.banChannelId}).`);
 
     let posted = 0;
+    let fresh = 0; // (new posts, not edits of ones already up)
     for (const ban of bans) {
       const embed = banEmbed(ban, gameName);
       const open = await PublicBan.findOne({ robloxId: ban.robloxId, liftedAt: null });
@@ -163,7 +165,10 @@ export function createGameRouter(client) {
       if (open?.messageId && open.channelId === channel.id) {
         message = await channel.messages.edit(open.messageId, { embeds: [embed] }).catch(() => null);
       }
-      if (!message) message = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+      if (!message) {
+        message = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+        fresh += 1;
+      }
       await PublicBan.findOneAndUpdate(
         { robloxId: ban.robloxId, liftedAt: null },
         { $set: { ...ban, game: gameName, channelId: channel.id, messageId: message.id } },
@@ -171,6 +176,7 @@ export function createGameRouter(client) {
       );
       posted += 1;
     }
+    if (fresh) nudgeSticky(client, channel.id); // (the channel's sticky message, if it has one, goes back under these)
     res.json({ ok: true, posted });
   });
 
